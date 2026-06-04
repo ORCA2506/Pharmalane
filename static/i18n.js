@@ -68,7 +68,7 @@ const TRANSLATIONS = {
 
     // Landing — CTA
     "cta.title": "Ready to take control of your health?",
-    "cta.subtitle": "Join thousands of users who trust PharmaLane for smarter healthcare decisions.",
+    "cta.subtitle": "Join thousands of users who trust Medicure for smarter healthcare decisions.",
     "cta.btn_dashboard": "Go to Dashboard",
     "cta.btn_start": "Get Started — It's Free",
 
@@ -242,7 +242,7 @@ const TRANSLATIONS = {
 
     // Landing — CTA
     "cta.title": "अपने स्वास्थ्य पर नियंत्रण रखने के लिए तैयार हैं?",
-    "cta.subtitle": "हजारों उपयोगकर्ताओं से जुड़ें जो PharmaLane पर भरोसा करते हैं।",
+    "cta.subtitle": "हजारों उपयोगकर्ताओं से जुड़ें जो Medicure पर भरोसा करते हैं।",
     "cta.btn_dashboard": "डैशबोर्ड पर जाएं",
     "cta.btn_start": "शुरू करें — यह मुफ्त है",
 

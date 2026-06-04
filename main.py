@@ -13,6 +13,7 @@ from groq import Groq
 import razorpay
 import hmac
 import hashlib
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'pharmalane-dev-key-change-in-prod')
@@ -28,6 +29,10 @@ app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
     'pool_pre_ping': True,
     'pool_recycle': 300,
 }
+UPLOAD_FOLDER = os.path.join('static', 'uploads', 'reports')
+ALLOWED_EXTENSIONS = {'pdf', 'doc', 'docx', 'txt', 'png', 'jpg', 'jpeg'}
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 db = SQLAlchemy(app)
 bcrypt = Bcrypt(app)
@@ -49,6 +54,15 @@ class User(db.Model, UserMixin):
     appointments_as_patient = db.relationship('Appointment', foreign_keys='Appointment.patient_id', backref='patient', lazy=True)
     appointments_as_doctor  = db.relationship('Appointment', foreign_keys='Appointment.doctor_id',  backref='doctor',  lazy=True)
 
+class PatientReport(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    patient_id    = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    appointment_id = db.Column(db.Integer, db.ForeignKey('appointment.id'), nullable=True)
+    filename      = db.Column(db.String(300), nullable=False)
+    description   = db.Column(db.Text, nullable=True)
+    uploaded_at   = db.Column(db.DateTime, default=datetime.utcnow)
+    patient       = db.relationship('User', backref='reports')
+
 class Appointment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     patient_id      = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
@@ -65,6 +79,7 @@ class Appointment(db.Model):
     razorpay_payment_id = db.Column(db.String(100), nullable=True)
     amount_paise    = db.Column(db.Integer, default=50000)           # ₹500
     created_at      = db.Column(db.DateTime, default=datetime.utcnow)
+    reports         = db.relationship('PatientReport', backref='appointment', lazy=True)
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -380,6 +395,43 @@ def predict():
         ai_powered=ai_powered
     )
 
+@app.route('/upload-report/<int:appt_id>', methods=['POST'])
+@login_required
+def upload_report(appt_id):
+    appt = Appointment.query.get_or_404(appt_id)
+    if appt.patient_id != current_user.id:
+        flash('Unauthorized.', 'danger')
+        return redirect(url_for('appointments'))
+
+    file = request.files.get('report_file')
+    description = request.form.get('description', '').strip()
+    saved_filename = None
+
+    if file and file.filename:
+        ext = file.filename.rsplit('.', 1)[-1].lower() if '.' in file.filename else ''
+        if ext not in ALLOWED_EXTENSIONS:
+            flash('File type not allowed.', 'danger')
+            return redirect(url_for('appointments'))
+        safe_name = f"{uuid.uuid4().hex}_{secure_filename(file.filename)}"
+        file.save(os.path.join(app.config['UPLOAD_FOLDER'], safe_name))
+        saved_filename = safe_name
+
+    if not saved_filename and not description:
+        flash('Please add a description or attach a file.', 'warning')
+        return redirect(url_for('appointments'))
+
+    report = PatientReport(
+        patient_id=current_user.id,
+        appointment_id=appt_id,
+        filename=saved_filename or 'text_note',
+        description=description
+    )
+    db.session.add(report)
+    db.session.commit()
+    flash('Report saved successfully.', 'success')
+    return redirect(url_for('appointments'))
+
+
 # ── Appointment Routes ────────────────────────────────────────────────────────
 
 @app.route('/appointments')
@@ -392,17 +444,21 @@ def appointments():
         my_appointments = Appointment.query.filter_by(doctor_id=current_user.id).order_by(Appointment.date, Appointment.time).all()
         today_appointments = [a for a in my_appointments if a.date == today_str and a.status == 'scheduled']
         upcoming = [a for a in my_appointments if a.date >= today_str and a.status == 'scheduled']
+        # Collect reports keyed by appointment id for doctor view
+        appt_reports = {a.id: a.reports for a in my_appointments}
     else:
         my_appointments = Appointment.query.filter_by(patient_id=current_user.id).order_by(Appointment.date, Appointment.time).all()
         today_appointments = []
         upcoming = [a for a in my_appointments if a.date >= today_str and a.status == 'scheduled']
+        appt_reports = {}
     return render_template('appointments.html',
         doctors=doctors,
         my_appointments=my_appointments,
         today_appointments=today_appointments,
         upcoming=upcoming,
         now=now,
-        today_str=today_str
+        today_str=today_str,
+        appt_reports=appt_reports
     )
 
 @app.route('/book-appointment', methods=['POST'])
