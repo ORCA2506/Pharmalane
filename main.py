@@ -170,71 +170,57 @@ RAZORPAY_KEY_SECRET = os.environ.get('RAZORPAY_KEY_SECRET', 'placeholder_secret'
 CONSULTATION_FEE   = 50000  # ₹500 in paise (100 paise = ₹1)
 
 def get_groq_analysis(symptoms_list, svm_disease, dataset_meds, dataset_diet, dataset_workout, dataset_precautions):
-    """
-    Uses Groq LLaMA3-70B (free) to generate a full structured medical analysis.
-    SVM prediction is passed as strong context so LLM validates + enriches it.
-    Falls back to dataset if API key not set or call fails.
-    """
-    if GROQ_API_KEY == 'gsk_placeholder':
+    if not GROQ_API_KEY or GROQ_API_KEY in ('gsk_placeholder', 'your_key_here'):
         return None
 
     symptoms_clean = ', '.join([s.replace('_', ' ') for s in symptoms_list])
-    meds_clean     = ', '.join(dataset_meds[:5])
-    diet_clean     = ', '.join(dataset_diet[:5])
-    workout_clean  = ', '.join(dataset_workout[:4])
-    prec_clean     = ', '.join(dataset_precautions[:4])
 
-    prompt = f"""You are a senior medical AI assistant. A patient reports these symptoms: {symptoms_clean}.
+    prompt = f"""You are a senior clinical physician. A patient presents with: {symptoms_clean}.
+Our ML model predicts: {svm_disease}.
 
-Our ML model (SVM trained on 4900+ cases) predicts: {svm_disease}
-Dataset medications: {meds_clean}
-Dataset diet: {diet_clean}
-Dataset workout: {workout_clean}
-Dataset precautions: {prec_clean}
+Give a precise, clinically accurate analysis in EXACTLY this format. Use plain text only — no asterisks, no dashes, no markdown.
 
-Provide a structured medical analysis in this EXACT format (no markdown, no asterisks, no bullet symbols, use plain text):
-
-DISEASE: [confirm or refine the disease name]
+DISEASE: [disease name only]
 
 OVERVIEW:
-[2-3 sentences explaining what this disease is and why these symptoms indicate it]
+[2-3 sentences: what this disease is, why these symptoms indicate it, who it typically affects]
 
 MEDICATIONS:
-1. [Medication name] - [what it does and typical use]
-2. [Medication name] - [what it does and typical use]
-3. [Medication name] - [what it does and typical use]
-4. [Medication name] - [what it does and typical use]
-5. [Medication name] - [what it does and typical use]
+1. [Drug name] — [specific use and mechanism, e.g. "Paracetamol 500mg — reduces fever and pain by inhibiting prostaglandin synthesis"]
+2. [Drug name] — [specific use]
+3. [Drug name] — [specific use]
+4. [Drug name] — [specific use]
+5. [Drug name] — [specific use]
 
 PRECAUTIONS:
-1. [Clear actionable precaution]
-2. [Clear actionable precaution]
-3. [Clear actionable precaution]
-4. [Clear actionable precaution]
+1. [Specific actionable precaution]
+2. [Specific actionable precaution]
+3. [Specific actionable precaution]
+4. [Specific actionable precaution]
 
 DIET PLAN:
-1. [Specific food or dietary advice]
-2. [Specific food or dietary advice]
-3. [Specific food or dietary advice]
-4. [Specific food or dietary advice]
+1. [Specific food recommendation with reason]
+2. [Specific food recommendation with reason]
+3. [Foods to avoid with reason]
+4. [Hydration or supplement advice]
 
 WORKOUT:
-1. [Specific exercise recommendation]
-2. [Specific exercise recommendation]
-3. [Specific exercise recommendation]
+1. [Specific exercise type, duration, intensity — suitable for this condition]
+2. [Specific exercise type]
+3. [Exercises to avoid during this condition]
 
 WHEN TO SEE A DOCTOR:
-[1-2 sentences on urgency and red flag symptoms]
+[1-2 sentences: specific red-flag symptoms that need immediate medical attention for this disease]
 
-Keep all points concise, practical, and medically accurate. No asterisks, no dashes as bullets, use numbers only."""
+IMPORTANT: Be specific to {svm_disease}. Do not give generic advice."""
 
     try:
         client = Groq(api_key=GROQ_API_KEY)
         chat   = client.chat.completions.create(
             model='llama-3.3-70b-versatile',
             messages=[{'role': 'user', 'content': prompt}],
-            temperature=0.3,
-            max_tokens=900,
+            temperature=0.2,
+            max_tokens=1000,
         )
         raw = chat.choices[0].message.content.strip()
         return parse_groq_response(raw)
@@ -244,7 +230,7 @@ Keep all points concise, practical, and medically accurate. No asterisks, no das
 
 
 def parse_groq_response(raw):
-    """Parse the structured Groq response into a clean dict."""
+    import re
     result = {
         'disease': '', 'overview': '',
         'medications': [], 'precautions': [],
@@ -255,28 +241,35 @@ def parse_groq_response(raw):
         line = line.strip()
         if not line:
             continue
-        if line.startswith('DISEASE:'):
-            result['disease'] = line.replace('DISEASE:', '').strip()
-        elif line.startswith('OVERVIEW:'):
+        if line.upper().startswith('DISEASE:'):
+            result['disease'] = line.split(':', 1)[1].strip()
+            current = None
+        elif line.upper().startswith('OVERVIEW:'):
             current = 'overview'
-        elif line.startswith('MEDICATIONS:'):
+            rest = line.split(':', 1)[1].strip()
+            if rest:
+                result['overview'] = rest
+        elif line.upper().startswith('MEDICATIONS:'):
             current = 'medications'
-        elif line.startswith('PRECAUTIONS:'):
+        elif line.upper().startswith('PRECAUTIONS:'):
             current = 'precautions'
-        elif line.startswith('DIET PLAN:'):
+        elif line.upper().startswith('DIET PLAN:'):
             current = 'diet'
-        elif line.startswith('WORKOUT:'):
+        elif line.upper().startswith('WORKOUT:'):
             current = 'workout'
-        elif line.startswith('WHEN TO SEE A DOCTOR:'):
+        elif line.upper().startswith('WHEN TO SEE A DOCTOR:'):
             current = 'doctor'
+            rest = line.split(':', 1)[1].strip()
+            if rest:
+                result['when_to_see_doctor'] = rest
         else:
             if current == 'overview':
                 result['overview'] += (' ' + line) if result['overview'] else line
             elif current == 'doctor':
                 result['when_to_see_doctor'] += (' ' + line) if result['when_to_see_doctor'] else line
             elif current in ('medications', 'precautions', 'diet', 'workout'):
-                # strip leading number+dot like "1. "
-                clean = line.lstrip('0123456789').lstrip('. ').strip()
+                # Strip leading "1. " or "1) " patterns cleanly
+                clean = re.sub(r'^\d+[.)\-]\s*', '', line).strip()
                 if clean:
                     key = 'diet' if current == 'diet' else current
                     result[key].append(clean)
