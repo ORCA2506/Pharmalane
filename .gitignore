@@ -9,4 +9,3 @@ instance/
 .env
 .DS_Store
 static/uploads/
-*.pkl
