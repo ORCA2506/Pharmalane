@@ -3,124 +3,87 @@
 
 {% block extra_css %}
 <style>
-  .page-hero {
-    background: linear-gradient(135deg, rgba(88,166,255,0.08) 0%, transparent 60%);
-    border-bottom: 1px solid var(--border);
-    padding: 2.5rem 0 2rem;
-  }
-  .page-hero h1 { font-size: 1.8rem; font-weight: 700; }
-  .page-hero p { color: var(--text-muted); font-size: 0.9rem; margin: 0; }
+  .page-hero { background: linear-gradient(135deg,rgba(88,166,255,0.08) 0%,transparent 60%); border-bottom:1px solid var(--border); padding:2.5rem 0 2rem; }
+  .page-hero h1 { font-size:1.8rem; font-weight:700; }
+  .booking-card { background:var(--bg-card); border:1px solid var(--border); border-radius:16px; padding:1.8rem; }
+  .form-label { font-size:0.85rem; font-weight:500; color:#c9d1d9; margin-bottom:0.4rem; }
+  .form-control,.form-select,textarea { background:var(--bg-card2)!important; border:1px solid var(--border)!important; color:#e6edf3!important; border-radius:8px; font-size:0.9rem; }
+  .form-control:focus,.form-select:focus,textarea:focus { border-color:var(--primary)!important; box-shadow:0 0 0 3px rgba(0,201,167,0.1)!important; }
+  textarea { resize:vertical; }
+  .btn-book { background:var(--primary); color:#000; font-weight:700; border:none; border-radius:8px; padding:0.7rem 2rem; width:100%; font-size:0.95rem; transition:all 0.2s; }
+  .btn-book:hover { background:var(--primary-dark); transform:translateY(-1px); }
 
   /* Doctor cards */
-  .doctor-card {
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: 14px;
-    padding: 1rem;
-    cursor: pointer;
-    transition: all 0.2s;
-    height: 100%;
-    text-align: center;
-  }
-  .doctor-card:hover, .doctor-card.selected { border-color: var(--primary); background: rgba(0,201,167,0.05); }
-  .doctor-card.selected { box-shadow: 0 0 0 2px rgba(0,201,167,0.3); }
-  .doc-photo {
-    width: 60px; height: 60px;
-    border-radius: 50%;
-    object-fit: cover;
-    margin: 0 auto 0.6rem;
-    display: block;
-    border: 2px solid rgba(0,201,167,0.3);
-  }
-  .doc-avatar-fallback {
-    width: 60px; height: 60px;
-    background: rgba(0,201,167,0.15);
-    border-radius: 50%;
-    display: flex; align-items: center; justify-content: center;
-    font-weight: 700; font-size: 1.1rem; color: var(--primary);
-    margin: 0 auto 0.6rem;
-    border: 2px solid rgba(0,201,167,0.3);
-  }
-  .doctor-card h6 { font-weight: 600; font-size: 0.85rem; margin-bottom: 0.2rem; }
-  .doctor-card small { color: var(--text-muted); font-size: 0.75rem; }
-  .online-dot { width: 8px; height: 8px; background: #3fb950; border-radius: 50%; display: inline-block; margin-right: 4px; }
+  .doctor-card { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:1rem; cursor:pointer; transition:all 0.2s; height:100%; text-align:center; }
+  .doctor-card:hover,.doctor-card.selected { border-color:var(--primary); background:rgba(0,201,167,0.05); }
+  .doctor-card.selected { box-shadow:0 0 0 2px rgba(0,201,167,0.3); }
+  .doc-photo { width:60px; height:60px; border-radius:50%; object-fit:cover; margin:0 auto 0.6rem; display:block; border:2px solid rgba(0,201,167,0.3); }
+  .doc-avatar-fallback { width:60px; height:60px; background:rgba(0,201,167,0.15); border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:1.1rem; color:var(--primary); margin:0 auto 0.6rem; border:2px solid rgba(0,201,167,0.3); }
+  .doctor-card h6 { font-weight:600; font-size:0.85rem; margin-bottom:0.2rem; }
+  .doctor-card small { color:var(--text-muted); font-size:0.75rem; }
+  .online-dot { width:8px; height:8px; background:#3fb950; border-radius:50%; display:inline-block; margin-right:4px; }
 
-  /* Booking form */
-  .booking-card {
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: 16px;
-    padding: 2rem;
-  }
-  .form-label { font-size: 0.85rem; font-weight: 500; color: #c9d1d9; margin-bottom: 0.4rem; }
-  .form-control, .form-select, textarea {
-    background: var(--bg-card2) !important;
-    border: 1px solid var(--border) !important;
-    color: #e6edf3 !important;
-    border-radius: 8px;
-    font-size: 0.9rem;
-  }
-  .form-control:focus, .form-select:focus, textarea:focus {
-    border-color: var(--primary) !important;
-    box-shadow: 0 0 0 3px rgba(0,201,167,0.1) !important;
-  }
-  .form-select option { background: #1c2128; }
-  textarea { resize: vertical; }
-  .btn-book { background: var(--primary); color: #000; font-weight: 700; border: none; border-radius: 8px; padding: 0.7rem 2rem; width: 100%; font-size: 0.95rem; transition: all 0.2s; }
-  .btn-book:hover { background: var(--primary-dark); transform: translateY(-1px); }
+  /* Calendar */
+  .cal-wrap { background:var(--bg-card2); border:1px solid var(--border); border-radius:12px; padding:1rem; margin-top:0.8rem; }
+  .cal-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:0.8rem; }
+  .cal-header button { background:none; border:1px solid var(--border); color:#e6edf3; border-radius:6px; padding:0.2rem 0.6rem; cursor:pointer; font-size:0.85rem; }
+  .cal-header button:hover { border-color:var(--primary); color:var(--primary); }
+  .cal-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:3px; }
+  .cal-day-name { text-align:center; font-size:0.7rem; color:var(--text-muted); padding:0.2rem 0; font-weight:600; }
+  .cal-day { text-align:center; font-size:0.8rem; padding:0.3rem; border-radius:6px; cursor:pointer; transition:all 0.15s; border:1px solid transparent; min-height:28px; line-height:20px; }
+  .cal-day.empty { cursor:default; }
+  .cal-day.past { color:#484f58; cursor:not-allowed; }
+  .cal-day.today { border-color:rgba(0,201,167,0.4); color:var(--primary); font-weight:700; }
+  .cal-day.selected { background:var(--primary); color:#000; font-weight:700; }
+  .cal-day.has-slot { background:rgba(248,81,73,0.1); color:#f85149; cursor:not-allowed; }
+  .cal-day.available:hover { border-color:var(--primary); background:rgba(0,201,167,0.08); }
+  .cal-legend { display:flex; gap:1rem; margin-top:0.6rem; font-size:0.72rem; color:var(--text-muted); flex-wrap:wrap; }
+  .cal-dot { width:8px; height:8px; border-radius:50%; display:inline-block; margin-right:3px; }
+
+  /* Time slots */
+  .time-slots { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; margin-top:0.5rem; }
+  .time-slot { background:var(--bg-card2); border:1px solid var(--border); border-radius:6px; padding:0.4rem 0.2rem; text-align:center; font-size:0.76rem; cursor:pointer; transition:all 0.15s; }
+  .time-slot:hover { border-color:var(--primary); color:var(--primary); }
+  .time-slot.selected { background:var(--primary); color:#000; font-weight:700; border-color:var(--primary); }
+  .time-slot.booked { background:rgba(248,81,73,0.08); color:#f85149; border-color:rgba(248,81,73,0.2); cursor:not-allowed; text-decoration:line-through; }
 
   /* Appointment list */
-  .appt-card {
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 1.2rem 1.5rem;
-    margin-bottom: 0.8rem;
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    flex-wrap: wrap;
-    transition: border-color 0.2s;
-  }
-  .appt-card:hover { border-color: rgba(0,201,167,0.2); }
-  .appt-date-box {
-    background: rgba(0,201,167,0.1);
-    border: 1px solid rgba(0,201,167,0.2);
-    border-radius: 10px;
-    padding: 0.6rem 1rem;
-    text-align: center;
-    min-width: 70px;
-  }
-  .appt-date-box .day { font-size: 1.4rem; font-weight: 700; color: var(--primary); line-height: 1; }
-  .appt-date-box .month { font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; }
-  .appt-info { flex: 1; }
-  .appt-info h6 { font-weight: 600; margin-bottom: 0.2rem; font-size: 0.92rem; }
-  .appt-info small { color: var(--text-muted); font-size: 0.8rem; }
-  .status-badge { padding: 0.25rem 0.7rem; border-radius: 20px; font-size: 0.75rem; font-weight: 600; }
-  .status-scheduled { background: rgba(0,201,167,0.12); color: var(--primary); border: 1px solid rgba(0,201,167,0.25); }
-  .status-cancelled { background: rgba(248,81,73,0.12); color: #f85149; border: 1px solid rgba(248,81,73,0.25); }
-  .status-completed { background: rgba(63,185,80,0.12); color: #3fb950; border: 1px solid rgba(63,185,80,0.25); }
-  .status-pending_payment { background: rgba(240,165,0,0.12); color: #f0a500; border: 1px solid rgba(240,165,0,0.25); }
-  .btn-join { background: var(--primary); color: #000; font-weight: 600; border: none; border-radius: 6px; padding: 0.4rem 1rem; font-size: 0.82rem; text-decoration: none; transition: all 0.2s; }
-  .btn-join:hover { background: var(--primary-dark); color: #000; }
-  .btn-cancel { background: transparent; color: #f85149; border: 1px solid rgba(248,81,73,0.3); border-radius: 6px; padding: 0.4rem 0.8rem; font-size: 0.8rem; transition: all 0.2s; }
-  .btn-cancel:hover { background: rgba(248,81,73,0.1); }
-  .btn-report { background: transparent; color: #58a6ff; border: 1px solid rgba(88,166,255,0.35); border-radius: 6px; padding: 0.4rem 0.8rem; font-size: 0.8rem; transition: all 0.2s; cursor: pointer; }
-  .btn-report:hover { background: rgba(88,166,255,0.1); }
-  .empty-state { text-align: center; padding: 3rem; color: var(--text-muted); }
-  .empty-state i { font-size: 2.5rem; margin-bottom: 1rem; opacity: 0.4; }
+  .appt-card { background:var(--bg-card); border:1px solid var(--border); border-radius:12px; padding:1.2rem 1.5rem; margin-bottom:0.8rem; transition:border-color 0.2s; }
+  .appt-card:hover { border-color:rgba(0,201,167,0.2); }
+  .appt-row { display:flex; align-items:center; gap:1rem; flex-wrap:wrap; }
+  .appt-date-box { background:rgba(0,201,167,0.1); border:1px solid rgba(0,201,167,0.2); border-radius:10px; padding:0.6rem 1rem; text-align:center; min-width:70px; }
+  .appt-date-box .day { font-size:1.4rem; font-weight:700; color:var(--primary); line-height:1; }
+  .appt-date-box .month { font-size:0.7rem; color:var(--text-muted); text-transform:uppercase; }
+  .appt-info { flex:1; }
+  .appt-info h6 { font-weight:600; margin-bottom:0.2rem; font-size:0.92rem; }
+  .appt-info small { color:var(--text-muted); font-size:0.8rem; }
+  .status-badge { padding:0.25rem 0.7rem; border-radius:20px; font-size:0.75rem; font-weight:600; }
+  .status-scheduled { background:rgba(0,201,167,0.12); color:var(--primary); border:1px solid rgba(0,201,167,0.25); }
+  .status-cancelled { background:rgba(248,81,73,0.12); color:#f85149; border:1px solid rgba(248,81,73,0.25); }
+  .status-completed { background:rgba(63,185,80,0.12); color:#3fb950; border:1px solid rgba(63,185,80,0.25); }
+  .status-pending_payment { background:rgba(240,165,0,0.12); color:#f0a500; border:1px solid rgba(240,165,0,0.25); }
+  .btn-join { background:var(--primary); color:#000; font-weight:600; border:none; border-radius:6px; padding:0.4rem 1rem; font-size:0.82rem; text-decoration:none; transition:all 0.2s; }
+  .btn-join:hover { background:var(--primary-dark); color:#000; }
+  .btn-cancel { background:transparent; color:#f85149; border:1px solid rgba(248,81,73,0.3); border-radius:6px; padding:0.4rem 0.8rem; font-size:0.8rem; transition:all 0.2s; }
+  .btn-cancel:hover { background:rgba(248,81,73,0.1); }
+  .btn-report { background:transparent; color:#58a6ff; border:1px solid rgba(88,166,255,0.35); border-radius:6px; padding:0.4rem 0.8rem; font-size:0.8rem; cursor:pointer; transition:all 0.2s; }
+  .btn-report:hover { background:rgba(88,166,255,0.1); }
+  .btn-rx { background:transparent; color:#a371f7; border:1px solid rgba(163,113,247,0.35); border-radius:6px; padding:0.4rem 0.8rem; font-size:0.8rem; cursor:pointer; transition:all 0.2s; }
+  .btn-rx:hover { background:rgba(163,113,247,0.1); }
+  .empty-state { text-align:center; padding:3rem; color:var(--text-muted); }
 
-  /* Report items shown to doctor */
-  .report-item { background: rgba(88,166,255,0.07); border: 1px solid rgba(88,166,255,0.2); border-radius: 8px; padding: 0.5rem 0.8rem; margin-top: 0.4rem; font-size: 0.8rem; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
-  .report-item a { color: #58a6ff; text-decoration: none; }
-  .report-item a:hover { text-decoration: underline; }
+  /* Report / prescription items */
+  .report-item { background:rgba(88,166,255,0.07); border:1px solid rgba(88,166,255,0.2); border-radius:8px; padding:0.5rem 0.8rem; margin-top:0.4rem; font-size:0.8rem; display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap; }
+  .report-item a { color:#58a6ff; text-decoration:none; }
+  .rx-box { background:rgba(163,113,247,0.07); border:1px solid rgba(163,113,247,0.2); border-radius:8px; padding:0.8rem; margin-top:0.5rem; font-size:0.82rem; }
+  .rx-box strong { color:#a371f7; }
 
-  /* Modal */
-  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.75); z-index: 9999; align-items: center; justify-content: center; }
-  .modal-overlay.active { display: flex; }
-  .modal-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; padding: 2rem; width: 100%; max-width: 460px; position: relative; }
-  .modal-close { position: absolute; top: 1rem; right: 1rem; background: none; border: none; color: var(--text-muted); font-size: 1.3rem; cursor: pointer; line-height: 1; }
-  .modal-close:hover { color: #fff; }
+  /* Modals */
+  .modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.75); z-index:9999; align-items:center; justify-content:center; }
+  .modal-overlay.active { display:flex; }
+  .modal-box { background:var(--bg-card); border:1px solid var(--border); border-radius:16px; padding:2rem; width:100%; max-width:500px; position:relative; max-height:90vh; overflow-y:auto; }
+  .modal-close { position:absolute; top:1rem; right:1rem; background:none; border:none; color:var(--text-muted); font-size:1.3rem; cursor:pointer; line-height:1; }
+  .modal-close:hover { color:#fff; }
 </style>
 {% endblock %}
 
@@ -138,6 +101,22 @@
     <!-- ── Booking Form (patients only) ── -->
     {% if current_user.role == 'patient' %}
     <div class="col-lg-5">
+
+      <!-- Pre-booking report upload -->
+      <div class="booking-card mb-3" style="border-color:rgba(88,166,255,0.25); background:rgba(88,166,255,0.03);">
+        <h6 style="font-weight:700; margin-bottom:1rem;"><i class="fa fa-file-medical me-2" style="color:#58a6ff"></i>Upload Report Before Booking <span style="font-size:0.75rem; color:var(--text-muted); font-weight:400;">(optional)</span></h6>
+        <form method="POST" action="{{ url_for('upload_report_general') }}" enctype="multipart/form-data">
+          <div class="mb-2">
+            <textarea name="description" class="form-control" rows="2" placeholder="Previous diagnosis, current symptoms, medications, notes for doctor..."></textarea>
+          </div>
+          <div class="mb-2">
+            <input type="file" name="report_file" class="form-control" accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg">
+          </div>
+          <button type="submit" class="btn-book" style="padding:0.5rem; font-size:0.85rem;"><i class="fa fa-upload me-1"></i>Save Report</button>
+        </form>
+      </div>
+
+      <!-- Booking form -->
       <div class="booking-card">
         <h5 style="font-weight:700; margin-bottom:1.5rem;"><i class="fa fa-calendar-plus me-2" style="color:var(--primary)"></i>Book Appointment</h5>
 
@@ -149,7 +128,7 @@
               <div class="doctor-card" onclick="selectDoctor({{ doc.id }}, this)">
                 {% if doc.profile_image %}
                 <img src="{{ doc.profile_image }}" alt="{{ doc.name }}" class="doc-photo"
-                     onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                     onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
                 <div class="doc-avatar-fallback" style="display:none;">{{ doc.name.split()[1][0] if doc.name.split()|length > 1 else doc.name[0] }}</div>
                 {% else %}
                 <div class="doc-avatar-fallback">{{ doc.name.split()[1][0] if doc.name.split()|length > 1 else doc.name[0] }}</div>
@@ -164,26 +143,39 @@
 
         <form method="POST" action="{{ url_for('book_appointment') }}" id="bookingForm">
           <input type="hidden" name="doctor_id" id="doctorIdInput" required />
+          <input type="hidden" name="date" id="selectedDateInput" required />
+          <input type="hidden" name="time" id="selectedTimeInput" required />
+
+          <!-- Calendar -->
           <div class="mb-3">
-            <label class="form-label">Date</label>
-            <input type="date" name="date" class="form-control" required
-              min="{{ now.strftime('%Y-%m-%d') if now else '' }}" />
+            <label class="form-label">Select Date</label>
+            <div class="cal-wrap">
+              <div class="cal-header">
+                <button type="button" onclick="calPrev()">‹</button>
+                <span id="calMonthLabel" style="font-weight:600; font-size:0.9rem;"></span>
+                <button type="button" onclick="calNext()">›</button>
+              </div>
+              <div class="cal-grid" id="calDayNames"></div>
+              <div class="cal-grid" id="calGrid"></div>
+              <div class="cal-legend">
+                <span><span class="cal-dot" style="background:var(--primary)"></span>Today</span>
+                <span><span class="cal-dot" style="background:#f85149"></span>Fully booked</span>
+                <span><span class="cal-dot" style="background:var(--primary);opacity:0.4"></span>Selected</span>
+              </div>
+            </div>
           </div>
-          <div class="mb-3">
-            <label class="form-label">Time</label>
-            <select name="time" class="form-select" required>
-              <option value="">Select time slot</option>
-              {% for h in range(9, 18) %}
-              <option value="{{ '%02d:00'|format(h) }}">{{ '%02d:00'|format(h) }} — {{ '%02d:00'|format(h+1) }}</option>
-              <option value="{{ '%02d:30'|format(h) }}">{{ '%02d:30'|format(h) }} — {{ '%02d:30'|format(h+1) }}</option>
-              {% endfor %}
-            </select>
+
+          <!-- Time slots -->
+          <div class="mb-3" id="timeSlotSection" style="display:none;">
+            <label class="form-label">Select Time Slot <span id="selectedDateLabel" style="color:var(--primary); font-size:0.8rem;"></span></label>
+            <div class="time-slots" id="timeSlotGrid"></div>
           </div>
+
           <div class="mb-3">
-            <label class="form-label">Reason for Visit <span style="color:var(--text-muted)">(optional)</span></label>
+            <label class="form-label">Reason <span style="color:var(--text-muted)">(optional)</span></label>
             <textarea name="reason" class="form-control" rows="2" placeholder="Briefly describe your concern..."></textarea>
           </div>
-          <button type="submit" class="btn-book"><i class="fa fa-calendar-check me-2"></i>Confirm Booking</button>
+          <button type="submit" class="btn-book" id="bookBtn" disabled><i class="fa fa-calendar-check me-2"></i>Confirm Booking &amp; Pay ₹500</button>
         </form>
       </div>
     </div>
@@ -192,118 +184,175 @@
     <!-- ── Appointments List ── -->
     <div class="col-lg-{% if current_user.role == 'patient' %}7{% else %}12{% endif %}">
       <h5 style="font-weight:700; margin-bottom:1.2rem;">
-        {% if current_user.role == 'doctor' %}
-        <i class="fa fa-list me-2" style="color:#58a6ff"></i>Your Schedule
-        {% else %}
-        <i class="fa fa-list me-2" style="color:#58a6ff"></i>My Appointments
-        {% endif %}
+        <i class="fa fa-list me-2" style="color:#58a6ff"></i>
+        {% if current_user.role == 'doctor' %}Your Schedule{% else %}My Appointments{% endif %}
       </h5>
 
       {% if my_appointments %}
         {% for appt in my_appointments %}
         {% set date_parts = appt.date.split('-') %}
+        {% set months = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'] %}
+        {% set rx = appt.prescriptions[0] if appt.prescriptions else None %}
         <div class="appt-card">
-          <div class="appt-date-box">
-            <div class="day">{{ date_parts[2] if date_parts|length == 3 else appt.date }}</div>
-            <div class="month">
-              {% set months = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'] %}
-              {{ months[date_parts[1]|int] if date_parts|length == 3 else '' }}
+          <div class="appt-row">
+            <div class="appt-date-box">
+              <div class="day">{{ date_parts[2] if date_parts|length==3 else appt.date }}</div>
+              <div class="month">{{ months[date_parts[1]|int] if date_parts|length==3 else '' }}</div>
             </div>
-          </div>
+            <div class="appt-info">
+              {% if current_user.role == 'patient' %}
+              <h6>{{ appt.doctor.name }} <small style="color:var(--text-muted);font-weight:400;">— {{ appt.doctor.specialty }}</small></h6>
+              {% else %}
+              <h6>{{ appt.patient.name }} <small style="color:var(--text-muted);font-weight:400;">— {{ appt.patient.email }}</small></h6>
+              {% endif %}
+              <small><i class="fa fa-clock me-1"></i>{{ appt.time }}{% if appt.reason %} · {{ appt.reason[:60] }}{% if appt.reason|length>60 %}...{% endif %}{% endif %}</small>
+            </div>
+            <span class="status-badge status-{{ appt.status }}">{{ appt.status.replace('_',' ').capitalize() }}</span>
 
-          <div class="appt-info">
-            {% if current_user.role == 'patient' %}
-            <h6>{{ appt.doctor.name }} <small style="color:var(--text-muted); font-weight:400;">— {{ appt.doctor.specialty }}</small></h6>
-            {% else %}
-            <h6>{{ appt.patient.name }}</h6>
+            <!-- Patient: add report button (any non-cancelled) -->
+            {% if current_user.role == 'patient' and appt.status != 'cancelled' %}
+            <button class="btn-report" onclick="openReportModal({{ appt.id }})">
+              <i class="fa fa-file-medical me-1"></i>Add Report
+            </button>
             {% endif %}
-            <small>
-              <i class="fa fa-clock me-1"></i>{{ appt.time }}
-              {% if appt.reason %} · {{ appt.reason[:60] }}{% if appt.reason|length > 60 %}...{% endif %}{% endif %}
-            </small>
+
+            <!-- Doctor: prescription button -->
+            {% if current_user.role == 'doctor' and appt.status in ['scheduled','completed'] %}
+            <button class="btn-rx" onclick="openRxModal({{ appt.id }}, '{{ appt.patient.name }}', {{ ("'" ~ rx.diagnosis ~ "'" if rx and rx.diagnosis else "''") }}, {{ ("'" ~ rx.medications|replace("'","\\'")|replace('\n','\\n') ~ "'" if rx and rx.medications else "''") }}, {{ ("'" ~ rx.instructions|replace("'","\\'")|replace('\n','\\n') ~ "'" if rx and rx.instructions else "''") }}, {{ ("'" ~ rx.follow_up ~ "'" if rx and rx.follow_up else "''") }})">
+              <i class="fa fa-prescription me-1"></i>{{ 'Edit Rx' if rx else 'Add Rx' }}
+            </button>
+            {% endif %}
+
+            <!-- Action buttons -->
+            {% if appt.payment_status == 'pending' %}
+              <a href="{{ url_for('payment_page', appt_id=appt.id) }}" class="btn-join" style="background:#f0a500;color:#000;">
+                <i class="fa fa-credit-card me-1"></i>Pay ₹500
+              </a>
+              <a href="{{ url_for('payment_cancel', appt_id=appt.id) }}" class="btn-cancel" onclick="return confirm('Cancel this booking?')">Cancel</a>
+            {% elif appt.status == 'scheduled' and appt.payment_status == 'paid' %}
+              <a href="{{ url_for('video_call', room_id=appt.room_id) }}" class="btn-join">
+                <i class="fa fa-video me-1"></i>Join Call
+              </a>
+              <form method="POST" action="{{ url_for('cancel_appointment', appt_id=appt.id) }}" style="display:inline;">
+                <button type="submit" class="btn-cancel" onclick="return confirm('Cancel this appointment?')">Cancel</button>
+              </form>
+            {% elif appt.status == 'scheduled' and current_user.role == 'doctor' %}
+              <form method="POST" action="{{ url_for('complete_appointment', appt_id=appt.id) }}" style="display:inline;">
+                <button type="submit" class="btn-join" style="background:#3fb950;font-size:0.78rem;">Mark Complete</button>
+              </form>
+            {% endif %}
           </div>
 
-          <span class="status-badge status-{{ appt.status }}">{{ appt.status.replace('_',' ').capitalize() }}</span>
-
-          <!-- Patient: report upload button (always visible on any non-cancelled appt) -->
-          {% if current_user.role == 'patient' and appt.status != 'cancelled' %}
-          <button class="btn-report" onclick="openReportModal({{ appt.id }})">
-            <i class="fa fa-file-medical me-1"></i>Add Report
-          </button>
-          {% endif %}
-
-          <!-- Action buttons -->
-          {% if appt.payment_status == 'pending' %}
-            <a href="{{ url_for('payment_page', appt_id=appt.id) }}" class="btn-join" style="background:#f0a500; color:#000;">
-              <i class="fa fa-credit-card me-1"></i>Pay ₹500
-            </a>
-            <a href="{{ url_for('payment_cancel', appt_id=appt.id) }}" class="btn-cancel" onclick="return confirm('Cancel this booking?')">Cancel</a>
-          {% elif appt.status == 'scheduled' and appt.payment_status == 'paid' %}
-            <a href="{{ url_for('video_call', room_id=appt.room_id) }}" class="btn-join">
-              <i class="fa fa-video me-1"></i>Join Call
-            </a>
-            <form method="POST" action="{{ url_for('cancel_appointment', appt_id=appt.id) }}" style="display:inline;">
-              <button type="submit" class="btn-cancel" onclick="return confirm('Cancel this appointment?')">Cancel</button>
-            </form>
-          {% endif %}
-
-          <!-- Doctor: show patient-attached reports -->
+          <!-- Doctor: patient reports -->
           {% if current_user.role == 'doctor' %}
             {% set rpts = appt_reports.get(appt.id, []) %}
             {% if rpts %}
-            <div style="width:100%; margin-top:0.6rem;">
+            <div style="margin-top:0.6rem;">
               <small style="color:var(--text-muted);"><i class="fa fa-paperclip me-1"></i>Patient Reports ({{ rpts|length }}):</small>
               {% for rpt in rpts %}
               <div class="report-item">
                 {% if rpt.filename != 'text_note' %}
                 <a href="{{ url_for('static', filename='uploads/reports/' + rpt.filename) }}" target="_blank">
-                  <i class="fa fa-file me-1"></i>{{ rpt.filename.split('_', 1)[-1] if '_' in rpt.filename else rpt.filename }}
+                  <i class="fa fa-file me-1"></i>{{ rpt.filename.split('_',1)[-1] if '_' in rpt.filename else rpt.filename }}
                 </a>
-                {% else %}
-                <i class="fa fa-note-sticky me-1" style="color:#58a6ff"></i>
-                {% endif %}
-                {% if rpt.description %}<span style="color:#c9d1d9; flex:1;">{{ rpt.description }}</span>{% endif %}
-                <span style="color:var(--text-muted); margin-left:auto; white-space:nowrap;">{{ rpt.uploaded_at.strftime('%d %b %Y') }}</span>
+                {% else %}<i class="fa fa-note-sticky me-1" style="color:#58a6ff"></i>{% endif %}
+                {% if rpt.description %}<span style="color:#c9d1d9;flex:1;">{{ rpt.description }}</span>{% endif %}
+                <span style="color:var(--text-muted);margin-left:auto;white-space:nowrap;">{{ rpt.uploaded_at.strftime('%d %b %Y') }}</span>
               </div>
               {% endfor %}
             </div>
             {% endif %}
           {% endif %}
 
+          <!-- Prescription view (patient sees it, doctor sees it) -->
+          {% if rx %}
+          <div class="rx-box">
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:0.5rem;">
+              <i class="fa fa-prescription" style="color:#a371f7"></i>
+              <strong>Prescription</strong>
+              <span style="color:var(--text-muted);font-size:0.75rem;margin-left:auto;">{{ rx.created_at.strftime('%d %b %Y') }} · Dr. {{ appt.doctor.name }}</span>
+            </div>
+            {% if rx.diagnosis %}<div><strong>Diagnosis:</strong> {{ rx.diagnosis }}</div>{% endif %}
+            {% if rx.medications %}<div style="margin-top:0.3rem;"><strong>Medications:</strong><br>{{ rx.medications|replace('\n','<br>')|safe }}</div>{% endif %}
+            {% if rx.instructions %}<div style="margin-top:0.3rem;"><strong>Instructions:</strong> {{ rx.instructions }}</div>{% endif %}
+            {% if rx.follow_up %}<div style="margin-top:0.3rem;"><strong>Follow-up:</strong> {{ rx.follow_up }}</div>{% endif %}
+          </div>
+          {% endif %}
+
         </div>
         {% endfor %}
+
+        <!-- Doctor: unlinked general reports -->
+        {% if current_user.role == 'doctor' and unlinked_reports %}
+        <div style="margin-top:1.5rem;">
+          <h6 style="font-weight:600; color:var(--text-muted); font-size:0.85rem; margin-bottom:0.6rem;"><i class="fa fa-inbox me-1"></i>General Patient Reports (not linked to appointment)</h6>
+          {% for rpt in unlinked_reports %}
+          <div class="report-item">
+            <strong style="color:#e6edf3;">{{ rpt.patient.name }}</strong>
+            {% if rpt.filename != 'text_note' %}
+            <a href="{{ url_for('static', filename='uploads/reports/' + rpt.filename) }}" target="_blank"><i class="fa fa-file me-1"></i>{{ rpt.filename.split('_',1)[-1] }}</a>
+            {% endif %}
+            {% if rpt.description %}<span style="color:#c9d1d9;flex:1;">{{ rpt.description }}</span>{% endif %}
+            <span style="color:var(--text-muted);margin-left:auto;">{{ rpt.uploaded_at.strftime('%d %b %Y') }}</span>
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+
       {% else %}
         <div class="empty-state">
-          <i class="fa fa-calendar-xmark d-block"></i>
+          <i class="fa fa-calendar-xmark d-block" style="font-size:2.5rem;margin-bottom:1rem;opacity:0.4;"></i>
           <p>No appointments yet.</p>
-          {% if current_user.role == 'patient' %}
-          <p style="font-size:0.85rem;">Book your first appointment with a doctor using the form.</p>
-          {% endif %}
+          {% if current_user.role == 'patient' %}<p style="font-size:0.85rem;">Book your first appointment using the form.</p>{% endif %}
         </div>
       {% endif %}
     </div>
   </div>
 </div>
 
-<!-- ── Upload Report Modal ── -->
+<!-- ── Upload Report Modal (post-booking) ── -->
 <div id="reportModal" class="modal-overlay" onclick="if(event.target===this)closeReportModal()">
   <div class="modal-box">
     <button class="modal-close" onclick="closeReportModal()">&times;</button>
-    <h6 style="font-weight:700; margin-bottom:1.2rem;">
-      <i class="fa fa-file-medical me-2" style="color:#58a6ff"></i>Add Report / Previous Description
-    </h6>
+    <h6 style="font-weight:700;margin-bottom:1.2rem;"><i class="fa fa-file-medical me-2" style="color:#58a6ff"></i>Add Report / Notes</h6>
     <form method="POST" id="reportForm" enctype="multipart/form-data">
       <div class="mb-3">
         <label class="form-label">Description / Notes <span style="color:var(--text-muted)">(optional)</span></label>
-        <textarea name="description" class="form-control" rows="3"
-          placeholder="Describe your previous condition, current symptoms, medications you are on, or any notes for the doctor..."></textarea>
+        <textarea name="description" class="form-control" rows="3" placeholder="Previous condition, symptoms, medications, notes for the doctor..."></textarea>
       </div>
       <div class="mb-3">
         <label class="form-label">Attach File <span style="color:var(--text-muted)">(PDF, image, doc — optional)</span></label>
         <input type="file" name="report_file" class="form-control" accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg">
-        <div style="font-size:0.78rem; color:var(--text-muted); margin-top:0.3rem;">Leave blank to save text notes only.</div>
       </div>
       <button type="submit" class="btn-book"><i class="fa fa-upload me-2"></i>Save Report</button>
+    </form>
+  </div>
+</div>
+
+<!-- ── Prescription Modal (doctor only) ── -->
+<div id="rxModal" class="modal-overlay" onclick="if(event.target===this)closeRxModal()">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeRxModal()">&times;</button>
+    <h6 style="font-weight:700;margin-bottom:1.2rem;color:#a371f7;"><i class="fa fa-prescription me-2"></i>Prescription — <span id="rxPatientName"></span></h6>
+    <form method="POST" id="rxForm">
+      <div class="mb-3">
+        <label class="form-label">Diagnosis</label>
+        <input type="text" name="diagnosis" id="rxDiagnosis" class="form-control" placeholder="e.g. Type 2 Diabetes Mellitus">
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Medications</label>
+        <textarea name="medications" id="rxMedications" class="form-control" rows="4"
+          placeholder="Metformin 500mg — twice daily after meals&#10;Aspirin 75mg — once daily"></textarea>
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Instructions / Advice</label>
+        <textarea name="instructions" id="rxInstructions" class="form-control" rows="2" placeholder="Avoid sugar. Monitor blood glucose daily."></textarea>
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Follow-up Date <span style="color:var(--text-muted)">(optional)</span></label>
+        <input type="text" name="follow_up" id="rxFollowUp" class="form-control" placeholder="e.g. 2 weeks / 15 Jan 2025">
+      </div>
+      <button type="submit" class="btn-book" style="background:#a371f7;"><i class="fa fa-save me-2"></i>Save Prescription</button>
     </form>
   </div>
 </div>
@@ -311,23 +360,145 @@
 
 {% block extra_js %}
 <script>
-  function selectDoctor(id, el) {
-    document.querySelectorAll('.doctor-card').forEach(c => c.classList.remove('selected'));
-    el.classList.add('selected');
-    document.getElementById('doctorIdInput').value = id;
+// ── Booked slots data from server ──
+const bookedSlotsData = {{ booked_slots_json | tojson }};
+const ALL_SLOTS = ['09:00','09:30','10:00','10:30','11:00','11:30','12:00','12:30','13:00','13:30','14:00','14:30','15:00','15:30','16:00','16:30','17:00','17:30'];
+
+let selectedDoctorId = null;
+let selectedDate = null;
+let selectedTime = null;
+let calYear, calMonth;
+
+function initCal() {
+  const now = new Date();
+  calYear  = now.getFullYear();
+  calMonth = now.getMonth();
+  renderCal();
+}
+
+function renderCal() {
+  const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  document.getElementById('calMonthLabel').textContent = months[calMonth] + ' ' + calYear;
+
+  const dayNames = document.getElementById('calDayNames');
+  dayNames.innerHTML = ['Su','Mo','Tu','We','Th','Fr','Sa'].map(d => `<div class="cal-day-name">${d}</div>`).join('');
+
+  const grid = document.getElementById('calGrid');
+  grid.innerHTML = '';
+
+  const firstDay = new Date(calYear, calMonth, 1).getDay();
+  const daysInMonth = new Date(calYear, calMonth+1, 0).getDate();
+  const today = new Date();
+  today.setHours(0,0,0,0);
+
+  for (let i=0; i<firstDay; i++) grid.innerHTML += `<div class="cal-day empty"></div>`;
+
+  for (let d=1; d<=daysInMonth; d++) {
+    const dateStr = `${calYear}-${String(calMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const thisDate = new Date(calYear, calMonth, d);
+    const isToday = thisDate.getTime() === today.getTime();
+    const isPast  = thisDate < today;
+    const isSelected = dateStr === selectedDate;
+
+    // Check if fully booked for selected doctor
+    let fullyBooked = false;
+    if (selectedDoctorId) {
+      const slots = (bookedSlotsData[selectedDoctorId]||[]).filter(s=>s.date===dateStr).map(s=>s.time);
+      fullyBooked = slots.length >= ALL_SLOTS.length;
+    }
+
+    let cls = 'cal-day';
+    if (isPast)        cls += ' past';
+    else if (isSelected) cls += ' selected available';
+    else if (fullyBooked) cls += ' has-slot';
+    else               cls += ' available';
+    if (isToday && !isSelected) cls += ' today';
+
+    const click = (!isPast && !fullyBooked) ? `onclick="selectDate('${dateStr}', ${d})"` : '';
+    grid.innerHTML += `<div class="${cls}" ${click}>${d}</div>`;
   }
-  const dateInput = document.querySelector('input[type="date"]');
-  if (dateInput) {
-    const today = new Date().toISOString().split('T')[0];
-    dateInput.min = today;
-    dateInput.value = today;
-  }
-  function openReportModal(apptId) {
-    document.getElementById('reportForm').action = '/upload-report/' + apptId;
-    document.getElementById('reportModal').classList.add('active');
-  }
-  function closeReportModal() {
-    document.getElementById('reportModal').classList.remove('active');
-  }
+}
+
+function selectDate(dateStr, day) {
+  selectedDate = dateStr;
+  selectedTime = null;
+  document.getElementById('selectedDateInput').value = dateStr;
+  document.getElementById('selectedTimeInput').value = '';
+  document.getElementById('bookBtn').disabled = true;
+  renderCal();
+  renderTimeSlots(dateStr);
+}
+
+function renderTimeSlots(dateStr) {
+  const section = document.getElementById('timeSlotSection');
+  const grid    = document.getElementById('timeSlotGrid');
+  const label   = document.getElementById('selectedDateLabel');
+  section.style.display = 'block';
+  label.textContent = '— ' + dateStr;
+
+  const booked = selectedDoctorId
+    ? (bookedSlotsData[selectedDoctorId]||[]).filter(s=>s.date===dateStr).map(s=>s.time)
+    : [];
+
+  grid.innerHTML = ALL_SLOTS.map(t => {
+    const isBooked = booked.includes(t);
+    const cls = 'time-slot' + (isBooked ? ' booked' : '') + (t===selectedTime ? ' selected' : '');
+    const click = !isBooked ? `onclick="selectTime('${t}',this)"` : '';
+    return `<div class="${cls}" ${click}>${t}</div>`;
+  }).join('');
+}
+
+function selectTime(t, el) {
+  selectedTime = t;
+  document.getElementById('selectedTimeInput').value = t;
+  document.querySelectorAll('.time-slot').forEach(s=>s.classList.remove('selected'));
+  el.classList.add('selected');
+  document.getElementById('bookBtn').disabled = !(selectedDate && selectedTime && selectedDoctorId);
+}
+
+function calPrev() {
+  calMonth--;
+  if (calMonth < 0) { calMonth=11; calYear--; }
+  renderCal();
+}
+function calNext() {
+  calMonth++;
+  if (calMonth > 11) { calMonth=0; calYear++; }
+  renderCal();
+}
+
+function selectDoctor(id, el) {
+  selectedDoctorId = id;
+  document.querySelectorAll('.doctor-card').forEach(c=>c.classList.remove('selected'));
+  el.classList.add('selected');
+  document.getElementById('doctorIdInput').value = id;
+  document.getElementById('bookBtn').disabled = true;
+  selectedDate = null; selectedTime = null;
+  document.getElementById('selectedDateInput').value = '';
+  document.getElementById('selectedTimeInput').value = '';
+  document.getElementById('timeSlotSection').style.display='none';
+  renderCal();
+}
+
+// ── Report modal ──
+function openReportModal(apptId) {
+  document.getElementById('reportForm').action = '/upload-report/' + apptId;
+  document.getElementById('reportModal').classList.add('active');
+}
+function closeReportModal() { document.getElementById('reportModal').classList.remove('active'); }
+
+// ── Prescription modal ──
+function openRxModal(apptId, patName, diag, meds, instr, followUp) {
+  document.getElementById('rxForm').action = '/add-prescription/' + apptId;
+  document.getElementById('rxPatientName').textContent = patName;
+  document.getElementById('rxDiagnosis').value = diag || '';
+  document.getElementById('rxMedications').value = (meds||'').replace(/\\n/g,'\n');
+  document.getElementById('rxInstructions').value = (instr||'').replace(/\\n/g,'\n');
+  document.getElementById('rxFollowUp').value = followUp || '';
+  document.getElementById('rxModal').classList.add('active');
+}
+function closeRxModal() { document.getElementById('rxModal').classList.remove('active'); }
+
+initCal();
 </script>
 {% endblock %}

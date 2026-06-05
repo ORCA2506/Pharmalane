@@ -2,94 +2,121 @@ from flask import Flask, request, render_template, redirect, url_for, flash, jso
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from flask_bcrypt import Bcrypt
+from flask_mail import Mail, Message
 from datetime import datetime
 import numpy as np
 import pandas as pd
 import pickle
 import uuid
 import os
-import requests
-from groq import Groq
+import re
 import razorpay
 import hmac
 import hashlib
 from werkzeug.utils import secure_filename
+import google.generativeai as genai
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'pharmalane-dev-key-change-in-prod')
 
-# Use PostgreSQL in production (Railway/Vercel), SQLite locally
 _db_url = os.environ.get('DATABASE_URL', 'sqlite:///pharmalane.db')
-# Fix postgres:// -> postgresql:// for SQLAlchemy
 if _db_url.startswith('postgres://'):
     _db_url = _db_url.replace('postgres://', 'postgresql://', 1)
 app.config['SQLALCHEMY_DATABASE_URI'] = _db_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-    'pool_pre_ping': True,
-    'pool_recycle': 300,
-}
+app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {'pool_pre_ping': True, 'pool_recycle': 300}
+
 UPLOAD_FOLDER = os.path.join('static', 'uploads', 'reports')
 ALLOWED_EXTENSIONS = {'pdf', 'doc', 'docx', 'txt', 'png', 'jpg', 'jpeg'}
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
+# ── Flask-Mail (Gmail SMTP) ───────────────────────────────────────────────────
+app.config['MAIL_SERVER']   = os.environ.get('MAIL_SERVER',   'smtp.gmail.com')
+app.config['MAIL_PORT']     = int(os.environ.get('MAIL_PORT', 587))
+app.config['MAIL_USE_TLS']  = True
+app.config['MAIL_USERNAME'] = os.environ.get('MAIL_USERNAME', '')
+app.config['MAIL_PASSWORD'] = os.environ.get('MAIL_PASSWORD', '')
+app.config['MAIL_DEFAULT_SENDER'] = os.environ.get('MAIL_USERNAME', 'noreply@pharmalane.com')
+
 db = SQLAlchemy(app)
 bcrypt = Bcrypt(app)
+mail = Mail(app)
 login_manager = LoginManager(app)
 login_manager.login_view = 'login'
 login_manager.login_message_category = 'info'
 
+# ── Gemini ────────────────────────────────────────────────────────────────────
+GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
+genai.configure(api_key=GEMINI_API_KEY)
+
+# ── Razorpay ──────────────────────────────────────────────────────────────────
+RAZORPAY_KEY_ID     = os.environ.get('RAZORPAY_KEY_ID',     'rzp_test_placeholder')
+RAZORPAY_KEY_SECRET = os.environ.get('RAZORPAY_KEY_SECRET', 'placeholder_secret')
+CONSULTATION_FEE    = 50000
+
 # ── Models ────────────────────────────────────────────────────────────────────
 
 class User(db.Model, UserMixin):
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100), nullable=False)
-    email = db.Column(db.String(120), unique=True, nullable=False)
-    password = db.Column(db.String(200), nullable=False)
-    role = db.Column(db.String(20), default='patient')
-    specialty = db.Column(db.String(100), nullable=True)
-    profile_image = db.Column(db.String(300), nullable=True)  # URL to doctor photo
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    id            = db.Column(db.Integer, primary_key=True)
+    name          = db.Column(db.String(100), nullable=False)
+    email         = db.Column(db.String(120), unique=True, nullable=False)
+    password      = db.Column(db.String(200), nullable=False)
+    role          = db.Column(db.String(20), default='patient')
+    specialty     = db.Column(db.String(100), nullable=True)
+    profile_image = db.Column(db.String(300), nullable=True)
+    created_at    = db.Column(db.DateTime, default=datetime.utcnow)
     appointments_as_patient = db.relationship('Appointment', foreign_keys='Appointment.patient_id', backref='patient', lazy=True)
     appointments_as_doctor  = db.relationship('Appointment', foreign_keys='Appointment.doctor_id',  backref='doctor',  lazy=True)
 
-class PatientReport(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    patient_id    = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    appointment_id = db.Column(db.Integer, db.ForeignKey('appointment.id'), nullable=True)
-    filename      = db.Column(db.String(300), nullable=False)
-    description   = db.Column(db.Text, nullable=True)
-    uploaded_at   = db.Column(db.DateTime, default=datetime.utcnow)
-    patient       = db.relationship('User', backref='reports')
-
 class Appointment(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    patient_id      = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    doctor_id       = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    date            = db.Column(db.String(20), nullable=False)
-    time            = db.Column(db.String(10), nullable=False)
-    reason          = db.Column(db.String(300), nullable=True)
-    status          = db.Column(db.String(20), default='pending_payment')  # pending_payment | scheduled | completed | cancelled
-    room_id         = db.Column(db.String(100), unique=True, nullable=False)
-    meet_link       = db.Column(db.String(200), nullable=True)
-    # Payment fields
-    payment_status  = db.Column(db.String(20), default='pending')   # pending | paid | refunded
+    id                  = db.Column(db.Integer, primary_key=True)
+    patient_id          = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    doctor_id           = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    date                = db.Column(db.String(20), nullable=False)
+    time                = db.Column(db.String(10), nullable=False)
+    reason              = db.Column(db.String(300), nullable=True)
+    status              = db.Column(db.String(20), default='pending_payment')
+    room_id             = db.Column(db.String(100), unique=True, nullable=False)
+    meet_link           = db.Column(db.String(200), nullable=True)
+    payment_status      = db.Column(db.String(20), default='pending')
     razorpay_order_id   = db.Column(db.String(100), nullable=True)
     razorpay_payment_id = db.Column(db.String(100), nullable=True)
-    amount_paise    = db.Column(db.Integer, default=50000)           # ₹500
-    created_at      = db.Column(db.DateTime, default=datetime.utcnow)
-    reports         = db.relationship('PatientReport', backref='appointment', lazy=True)
+    amount_paise        = db.Column(db.Integer, default=50000)
+    created_at          = db.Column(db.DateTime, default=datetime.utcnow)
+    reports             = db.relationship('PatientReport', backref='appointment', lazy=True)
+    prescriptions       = db.relationship('Prescription', backref='appointment', lazy=True)
+
+class PatientReport(db.Model):
+    id             = db.Column(db.Integer, primary_key=True)
+    patient_id     = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    appointment_id = db.Column(db.Integer, db.ForeignKey('appointment.id'), nullable=True)
+    filename       = db.Column(db.String(300), nullable=False)
+    description    = db.Column(db.Text, nullable=True)
+    uploaded_at    = db.Column(db.DateTime, default=datetime.utcnow)
+    patient        = db.relationship('User', backref='reports')
+
+class Prescription(db.Model):
+    id             = db.Column(db.Integer, primary_key=True)
+    appointment_id = db.Column(db.Integer, db.ForeignKey('appointment.id'), nullable=False)
+    doctor_id      = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    patient_id     = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    diagnosis      = db.Column(db.String(200), nullable=True)
+    medications    = db.Column(db.Text, nullable=True)   # free-text
+    instructions   = db.Column(db.Text, nullable=True)
+    follow_up      = db.Column(db.String(100), nullable=True)
+    created_at     = db.Column(db.DateTime, default=datetime.utcnow)
+    doctor         = db.relationship('User', foreign_keys=[doctor_id])
+    patient        = db.relationship('User', foreign_keys=[patient_id])
 
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
 
 # ── ML Assets ─────────────────────────────────────────────────────────────────
-
 sym_des     = pd.read_csv("datasets/symtoms_df.csv")
 precautions = pd.read_csv("datasets/precautions_df.csv")
-workout     = pd.read_csv("datasets/workout_df.csv")
+workout_df  = pd.read_csv("datasets/workout_df.csv")
 description = pd.read_csv("datasets/description.csv")
 medications = pd.read_csv('datasets/medications.csv')
 diets       = pd.read_csv("datasets/diets.csv")
@@ -99,7 +126,6 @@ symptoms_dict = {'itching': 0, 'skin_rash': 1, 'nodal_skin_eruptions': 2, 'conti
 diseases_list = {15: 'Fungal infection', 4: 'Allergy', 16: 'GERD', 9: 'Chronic cholestasis', 14: 'Drug Reaction', 33: 'Peptic ulcer diseae', 1: 'AIDS', 12: 'Diabetes ', 17: 'Gastroenteritis', 6: 'Bronchial Asthma', 23: 'Hypertension ', 30: 'Migraine', 7: 'Cervical spondylosis', 32: 'Paralysis (brain hemorrhage)', 28: 'Jaundice', 29: 'Malaria', 8: 'Chicken pox', 11: 'Dengue', 37: 'Typhoid', 40: 'hepatitis A', 19: 'Hepatitis B', 20: 'Hepatitis C', 21: 'Hepatitis D', 22: 'Hepatitis E', 3: 'Alcoholic hepatitis', 36: 'Tuberculosis', 10: 'Common Cold', 34: 'Pneumonia', 13: 'Dimorphic hemmorhoids(piles)', 18: 'Heart attack', 39: 'Varicose veins', 26: 'Hypothyroidism', 24: 'Hyperthyroidism', 25: 'Hypoglycemia', 31: 'Osteoarthristis', 5: 'Arthritis', 0: '(vertigo) Paroymsal  Positional Vertigo', 2: 'Acne', 38: 'Urinary tract infection', 35: 'Psoriasis', 27: 'Impetigo'}
 
 def parse_list_string(val):
-    """Convert "['item1', 'item2']" string into a clean Python list."""
     import ast
     try:
         result = ast.literal_eval(str(val))
@@ -107,30 +133,20 @@ def parse_list_string(val):
             return [str(x).strip() for x in result if str(x).strip()]
     except Exception:
         pass
-    # fallback: strip brackets and split
     cleaned = str(val).strip().strip("[]").replace("'", "").replace('"', '')
     return [x.strip() for x in cleaned.split(',') if x.strip()]
 
 def helper(dis):
-    desc   = description[description['Disease'] == dis]['Description']
-    desc   = " ".join([w for w in desc])
-
+    desc = " ".join(description[description['Disease'] == dis]['Description'].tolist())
     pre_df = precautions[precautions['Disease'] == dis][['Precaution_1','Precaution_2','Precaution_3','Precaution_4']]
-    pre    = [str(v).strip() for row in pre_df.values for v in row if str(v).strip() and str(v) != 'nan']
-
-    med_raw = medications[medications['Disease'] == dis]['Medication']
+    pre = [str(v).strip() for row in pre_df.values for v in row if str(v).strip() and str(v) != 'nan']
     med = []
-    for val in med_raw.values:
+    for val in medications[medications['Disease'] == dis]['Medication'].values:
         med.extend(parse_list_string(val))
-
-    die_raw = diets[diets['Disease'] == dis]['Diet']
     die = []
-    for val in die_raw.values:
+    for val in diets[diets['Disease'] == dis]['Diet'].values:
         die.extend(parse_list_string(val))
-
-    wrkout_raw = workout[workout['disease'] == dis]['workout']
-    wrkout = [str(w).strip() for w in wrkout_raw.values if str(w).strip() and str(w) != 'nan']
-
+    wrkout = [str(w).strip() for w in workout_df[workout_df['disease'] == dis]['workout'].values if str(w).strip() and str(w) != 'nan']
     return desc, pre, med, die, wrkout
 
 def get_predicted_value(patient_symptoms):
@@ -140,10 +156,8 @@ def get_predicted_value(patient_symptoms):
     return diseases_list[svc.predict([input_vector])[0]]
 
 def get_confidence_score(patient_symptoms):
-    """Return a pseudo-confidence based on symptom match density."""
     matched = sum(1 for s in patient_symptoms if s in symptoms_dict)
-    base = min(72 + (matched * 4), 97)
-    return base
+    return min(72 + (matched * 4), 97)
 
 SEVERITY_MAP = {
     'AIDS': 'Critical', 'Heart attack': 'Critical', 'Paralysis (brain hemorrhage)': 'Critical',
@@ -160,127 +174,88 @@ SEVERITY_MAP = {
 def get_severity(disease):
     return SEVERITY_MAP.get(disease.strip(), 'Medium')
 
-# ── Groq LLaMA3 AI Analysis ───────────────────────────────────────────────────
-# Get your FREE API key at https://console.groq.com (free tier: 14,400 req/day)
-GROQ_API_KEY = os.environ.get('GROQ_API_KEY', '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')
+# ── Gemini AI Analysis ────────────────────────────────────────────────────────
 
-# Razorpay — get free test keys at https://dashboard.razorpay.com → Settings → API Keys
-RAZORPAY_KEY_ID     = os.environ.get('RAZORPAY_KEY_ID',     'rzp_test_placeholder')
-RAZORPAY_KEY_SECRET = os.environ.get('RAZORPAY_KEY_SECRET', 'placeholder_secret')
-CONSULTATION_FEE   = 50000  # ₹500 in paise (100 paise = ₹1)
-
-def get_groq_analysis(symptoms_list, svm_disease, dataset_meds, dataset_diet, dataset_workout, dataset_precautions):
-    if not GROQ_API_KEY or GROQ_API_KEY in ('gsk_placeholder', 'your_key_here'):
-        return None
-
-    symptoms_clean = ', '.join([s.replace('_', ' ') for s in symptoms_list])
-
-    prompt = f"""You are a senior clinical physician. A patient presents with: {symptoms_clean}.
-Our ML model predicts: {svm_disease}.
-
-Give a precise, clinically accurate analysis in EXACTLY this format. Use plain text only — no asterisks, no dashes, no markdown.
-
-DISEASE: [disease name only]
-
-OVERVIEW:
-[2-3 sentences: what this disease is, why these symptoms indicate it, who it typically affects]
-
-MEDICATIONS:
-1. [Drug name] — [specific use and mechanism, e.g. "Paracetamol 500mg — reduces fever and pain by inhibiting prostaglandin synthesis"]
-2. [Drug name] — [specific use]
-3. [Drug name] — [specific use]
-4. [Drug name] — [specific use]
-5. [Drug name] — [specific use]
-
-PRECAUTIONS:
-1. [Specific actionable precaution]
-2. [Specific actionable precaution]
-3. [Specific actionable precaution]
-4. [Specific actionable precaution]
-
-DIET PLAN:
-1. [Specific food recommendation with reason]
-2. [Specific food recommendation with reason]
-3. [Foods to avoid with reason]
-4. [Hydration or supplement advice]
-
-WORKOUT:
-1. [Specific exercise type, duration, intensity — suitable for this condition]
-2. [Specific exercise type]
-3. [Exercises to avoid during this condition]
-
-WHEN TO SEE A DOCTOR:
-[1-2 sentences: specific red-flag symptoms that need immediate medical attention for this disease]
-
-IMPORTANT: Be specific to {svm_disease}. Do not give generic advice."""
-
+def get_gemini_analysis(symptoms_list, svm_disease):
+    """Single curated prompt to Gemini — minimal tokens, maximum precision."""
     try:
-        client = Groq(api_key=GROQ_API_KEY)
-        chat   = client.chat.completions.create(
-            model='llama-3.3-70b-versatile',
-            messages=[{'role': 'user', 'content': prompt}],
-            temperature=0.2,
-            max_tokens=1000,
+        symptoms_str = ', '.join(s.replace('_', ' ') for s in symptoms_list)
+        prompt = (
+            f"Patient symptoms: {symptoms_str}. ML model predicts: {svm_disease}.\n"
+            "Reply in this exact format, plain text, no markdown:\n"
+            "DISEASE: <name>\n"
+            "OVERVIEW: <2 sentences on what it is and why these symptoms indicate it>\n"
+            "MEDICATIONS: 1.<drug — dose — purpose> 2.<...> 3.<...> 4.<...> 5.<...>\n"
+            "PRECAUTIONS: 1.<action> 2.<action> 3.<action> 4.<action>\n"
+            "DIET: 1.<food/advice> 2.<food/advice> 3.<avoid> 4.<hydration>\n"
+            "WORKOUT: 1.<exercise — duration> 2.<exercise> 3.<avoid>\n"
+            "DOCTOR_ALERT: <1 sentence red-flag symptoms requiring immediate care>"
         )
-        raw = chat.choices[0].message.content.strip()
-        return parse_groq_response(raw)
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        resp  = model.generate_content(prompt)
+        return _parse_gemini(resp.text.strip())
     except Exception as e:
-        print(f'Groq error: {e}')
+        print(f'Gemini error: {e}')
         return None
 
-
-def parse_groq_response(raw):
-    import re
-    result = {
-        'disease': '', 'overview': '',
-        'medications': [], 'precautions': [],
-        'diet': [], 'workout': [], 'when_to_see_doctor': ''
-    }
-    current = None
+def _parse_gemini(raw):
+    result = {'disease':'','overview':'','medications':[],'precautions':[],'diet':[],'workout':[],'when_to_see_doctor':''}
     for line in raw.splitlines():
         line = line.strip()
         if not line:
             continue
         if line.upper().startswith('DISEASE:'):
-            result['disease'] = line.split(':', 1)[1].strip()
-            current = None
+            result['disease'] = line.split(':',1)[1].strip()
         elif line.upper().startswith('OVERVIEW:'):
-            current = 'overview'
-            rest = line.split(':', 1)[1].strip()
-            if rest:
-                result['overview'] = rest
+            result['overview'] = line.split(':',1)[1].strip()
         elif line.upper().startswith('MEDICATIONS:'):
-            current = 'medications'
+            result['medications'] = [re.sub(r'^\d+\.','',p).strip() for p in re.split(r'\s+\d+\.', line.split(':',1)[1]) if p.strip()]
         elif line.upper().startswith('PRECAUTIONS:'):
-            current = 'precautions'
-        elif line.upper().startswith('DIET PLAN:'):
-            current = 'diet'
+            result['precautions'] = [re.sub(r'^\d+\.','',p).strip() for p in re.split(r'\s+\d+\.', line.split(':',1)[1]) if p.strip()]
+        elif line.upper().startswith('DIET:'):
+            result['diet'] = [re.sub(r'^\d+\.','',p).strip() for p in re.split(r'\s+\d+\.', line.split(':',1)[1]) if p.strip()]
         elif line.upper().startswith('WORKOUT:'):
-            current = 'workout'
-        elif line.upper().startswith('WHEN TO SEE A DOCTOR:'):
-            current = 'doctor'
-            rest = line.split(':', 1)[1].strip()
-            if rest:
-                result['when_to_see_doctor'] = rest
-        else:
-            if current == 'overview':
-                result['overview'] += (' ' + line) if result['overview'] else line
-            elif current == 'doctor':
-                result['when_to_see_doctor'] += (' ' + line) if result['when_to_see_doctor'] else line
-            elif current in ('medications', 'precautions', 'diet', 'workout'):
-                # Strip leading "1. " or "1) " patterns cleanly
-                clean = re.sub(r'^\d+[.)\-]\s*', '', line).strip()
-                if clean:
-                    key = 'diet' if current == 'diet' else current
-                    result[key].append(clean)
+            result['workout'] = [re.sub(r'^\d+\.','',p).strip() for p in re.split(r'\s+\d+\.', line.split(':',1)[1]) if p.strip()]
+        elif line.upper().startswith('DOCTOR_ALERT:'):
+            result['when_to_see_doctor'] = line.split(':',1)[1].strip()
     return result
 
-def generate_meet_link(room_id):
-    """
-    Returns a placeholder until doctor sets the real Google Meet link.
-    Doctor creates the meeting on meet.google.com/new and pastes the link back.
-    """
-    return None  # Will be set by doctor via /set-meet-link route
+# ── Email helpers ─────────────────────────────────────────────────────────────
+
+def _send_appointment_emails(appt):
+    """Send confirmation emails to patient and doctor after payment."""
+    try:
+        doc  = User.query.get(appt.doctor_id)
+        pat  = User.query.get(appt.patient_id)
+        body_patient = (
+            f"Hi {pat.name},\n\n"
+            f"Your appointment has been confirmed!\n\n"
+            f"  Doctor  : {doc.name} ({doc.specialty})\n"
+            f"  Date    : {appt.date}\n"
+            f"  Time    : {appt.time}\n"
+            f"  Reason  : {appt.reason or 'Not specified'}\n\n"
+            f"Join your video call at: {url_for('video_call', room_id=appt.room_id, _external=True)}\n\n"
+            f"Please upload any prior reports before the appointment.\n\n"
+            f"— PharmaLane Team"
+        )
+        body_doctor = (
+            f"Hi {doc.name},\n\n"
+            f"New appointment scheduled:\n\n"
+            f"  Patient : {pat.name} ({pat.email})\n"
+            f"  Date    : {appt.date}\n"
+            f"  Time    : {appt.time}\n"
+            f"  Reason  : {appt.reason or 'Not specified'}\n\n"
+            f"View appointment: {url_for('appointments', _external=True)}\n\n"
+            f"— PharmaLane"
+        )
+        mail.send(Message(subject="Appointment Confirmed — PharmaLane",
+                          recipients=[pat.email], body=body_patient))
+        mail.send(Message(subject=f"New Appointment: {pat.name} on {appt.date}",
+                          recipients=[doc.email], body=body_doctor))
+    except Exception as e:
+        print(f'Email error: {e}')
+
+# ── Routes ────────────────────────────────────────────────────────────────────
 
 @app.route('/')
 def landing():
@@ -291,21 +266,19 @@ def register():
     if current_user.is_authenticated:
         return redirect(url_for('dashboard'))
     if request.method == 'POST':
-        name      = request.form.get('name', '').strip()
-        email     = request.form.get('email', '').strip().lower()
-        password  = request.form.get('password', '')
-        role      = request.form.get('role', 'patient')
-        specialty = request.form.get('specialty', '').strip()
-
+        name      = request.form.get('name','').strip()
+        email     = request.form.get('email','').strip().lower()
+        password  = request.form.get('password','')
+        role      = request.form.get('role','patient')
+        specialty = request.form.get('specialty','').strip()
         if User.query.filter_by(email=email).first():
-            flash('Email already registered. Please login.', 'danger')
+            flash('Email already registered.', 'danger')
             return redirect(url_for('register'))
-
         hashed_pw = bcrypt.generate_password_hash(password).decode('utf-8')
-        profile_image = request.form.get('profile_image', '').strip() or None
+        profile_image = request.form.get('profile_image','').strip() or None
         user = User(name=name, email=email, password=hashed_pw, role=role,
-                    specialty=specialty if role == 'doctor' else None,
-                    profile_image=profile_image if role == 'doctor' else None)
+                    specialty=specialty if role=='doctor' else None,
+                    profile_image=profile_image if role=='doctor' else None)
         db.session.add(user)
         db.session.commit()
         flash('Account created! Please login.', 'success')
@@ -317,13 +290,12 @@ def login():
     if current_user.is_authenticated:
         return redirect(url_for('dashboard'))
     if request.method == 'POST':
-        email    = request.form.get('email', '').strip().lower()
-        password = request.form.get('password', '')
+        email    = request.form.get('email','').strip().lower()
+        password = request.form.get('password','')
         user     = User.query.filter_by(email=email).first()
         if user and bcrypt.check_password_hash(user.password, password):
             login_user(user)
-            next_page = request.args.get('next')
-            return redirect(next_page or url_for('dashboard'))
+            return redirect(request.args.get('next') or url_for('dashboard'))
         flash('Invalid email or password.', 'danger')
     return render_template('login.html')
 
@@ -333,8 +305,6 @@ def logout():
     logout_user()
     return redirect(url_for('landing'))
 
-# ── Core App Routes ───────────────────────────────────────────────────────────
-
 @app.route('/dashboard')
 @login_required
 def dashboard():
@@ -343,87 +313,92 @@ def dashboard():
 @app.route('/predict', methods=['POST'])
 @login_required
 def predict():
-    symptoms = request.form.get('symptoms', '').strip()
+    symptoms = request.form.get('symptoms','').strip()
     if not symptoms or symptoms == 'Symptoms':
         flash('Please enter valid symptoms.', 'warning')
         return redirect(url_for('dashboard'))
 
-    user_symptoms = [s.strip().strip("[]' ") for s in symptoms.split(',')]
+    user_symptoms  = [s.strip().strip("[]' ") for s in symptoms.split(',')]
     valid_symptoms = [s for s in user_symptoms if s in symptoms_dict]
 
     if not valid_symptoms:
-        flash('No recognizable symptoms found. Please check spelling.', 'warning')
+        flash('No recognizable symptoms found.', 'warning')
         return redirect(url_for('dashboard'))
 
     predicted_disease = get_predicted_value(valid_symptoms)
     dis_des, prec, meds, rec_diet, wrkout = helper(predicted_disease)
-    confidence  = get_confidence_score(valid_symptoms)
-    severity    = get_severity(predicted_disease)
+    confidence = get_confidence_score(valid_symptoms)
+    severity   = get_severity(predicted_disease)
 
-    # Try Groq LLaMA3 AI — enriches and validates the SVM result
-    ai_result = get_groq_analysis(valid_symptoms, predicted_disease, meds, rec_diet, wrkout, prec)
-
-    # If AI returned data, use it; otherwise fall back to dataset
-    final_disease     = ai_result['disease']   if ai_result and ai_result['disease']   else predicted_disease.strip()
-    final_overview    = ai_result['overview']  if ai_result and ai_result['overview']  else dis_des
-    final_meds        = ai_result['medications']   if ai_result and ai_result['medications']   else meds
-    final_prec        = ai_result['precautions']   if ai_result and ai_result['precautions']   else prec
-    final_diet        = ai_result['diet']          if ai_result and ai_result['diet']          else rec_diet
-    final_workout     = ai_result['workout']       if ai_result and ai_result['workout']       else wrkout
-    when_to_see_doc   = ai_result['when_to_see_doctor'] if ai_result else ''
-    ai_powered        = ai_result is not None
+    ai_result  = get_gemini_analysis(valid_symptoms, predicted_disease)
 
     return render_template('dashboard.html',
-        predicted_disease=final_disease,
-        dis_des=final_overview,
-        my_precautions=final_prec,
-        medications=final_meds,
-        my_diet=final_diet,
-        workout=final_workout,
-        when_to_see_doc=when_to_see_doc,
+        # ML dataset results (always shown)
+        ml_disease=predicted_disease.strip(),
+        ml_overview=dis_des,
+        ml_precautions=prec,
+        ml_medications=meds,
+        ml_diet=rec_diet,
+        ml_workout=wrkout,
+        # Gemini AI results (shown above if available)
+        ai_result=ai_result,
+        # shared
         entered_symptoms=symptoms,
         confidence=confidence,
         severity=severity,
         symptom_count=len(valid_symptoms),
-        ai_powered=ai_powered
     )
+
+# ── Report Upload (pre-booking: no appt_id, post-booking: with appt_id) ───────
+
+def _save_report(patient_id, description_text, file_obj, appt_id=None):
+    saved_filename = None
+    if file_obj and file_obj.filename:
+        ext = file_obj.filename.rsplit('.',1)[-1].lower() if '.' in file_obj.filename else ''
+        if ext not in ALLOWED_EXTENSIONS:
+            return None, 'File type not allowed.'
+        safe_name = f"{uuid.uuid4().hex}_{secure_filename(file_obj.filename)}"
+        file_obj.save(os.path.join(app.config['UPLOAD_FOLDER'], safe_name))
+        saved_filename = safe_name
+    if not saved_filename and not description_text:
+        return None, 'Please add a description or attach a file.'
+    report = PatientReport(
+        patient_id=patient_id,
+        appointment_id=appt_id,
+        filename=saved_filename or 'text_note',
+        description=description_text
+    )
+    db.session.add(report)
+    db.session.commit()
+    return report, None
+
+@app.route('/upload-report', methods=['POST'])
+@login_required
+def upload_report_general():
+    """Pre-booking: upload report not linked to any appointment yet."""
+    description_text = request.form.get('description','').strip()
+    report, err = _save_report(current_user.id, description_text, request.files.get('report_file'))
+    if err:
+        flash(err, 'warning')
+    else:
+        flash('Report saved. It will be visible to your doctor.', 'success')
+    return redirect(url_for('appointments'))
 
 @app.route('/upload-report/<int:appt_id>', methods=['POST'])
 @login_required
 def upload_report(appt_id):
+    """Post-booking: link report to a specific appointment."""
     appt = Appointment.query.get_or_404(appt_id)
     if appt.patient_id != current_user.id:
         flash('Unauthorized.', 'danger')
         return redirect(url_for('appointments'))
-
-    file = request.files.get('report_file')
-    description = request.form.get('description', '').strip()
-    saved_filename = None
-
-    if file and file.filename:
-        ext = file.filename.rsplit('.', 1)[-1].lower() if '.' in file.filename else ''
-        if ext not in ALLOWED_EXTENSIONS:
-            flash('File type not allowed.', 'danger')
-            return redirect(url_for('appointments'))
-        safe_name = f"{uuid.uuid4().hex}_{secure_filename(file.filename)}"
-        file.save(os.path.join(app.config['UPLOAD_FOLDER'], safe_name))
-        saved_filename = safe_name
-
-    if not saved_filename and not description:
-        flash('Please add a description or attach a file.', 'warning')
-        return redirect(url_for('appointments'))
-
-    report = PatientReport(
-        patient_id=current_user.id,
-        appointment_id=appt_id,
-        filename=saved_filename or 'text_note',
-        description=description
-    )
-    db.session.add(report)
-    db.session.commit()
-    flash('Report saved successfully.', 'success')
+    description_text = request.form.get('description','').strip()
+    report, err = _save_report(current_user.id, description_text, request.files.get('report_file'), appt_id)
+    if err:
+        flash(err, 'warning')
+    else:
+        flash('Report saved successfully.', 'success')
     return redirect(url_for('appointments'))
-
 
 # ── Appointment Routes ────────────────────────────────────────────────────────
 
@@ -433,17 +408,30 @@ def appointments():
     doctors = User.query.filter_by(role='doctor').all()
     now = datetime.utcnow()
     today_str = now.strftime('%Y-%m-%d')
+
     if current_user.role == 'doctor':
         my_appointments = Appointment.query.filter_by(doctor_id=current_user.id).order_by(Appointment.date, Appointment.time).all()
         today_appointments = [a for a in my_appointments if a.date == today_str and a.status == 'scheduled']
         upcoming = [a for a in my_appointments if a.date >= today_str and a.status == 'scheduled']
-        # Collect reports keyed by appointment id for doctor view
         appt_reports = {a.id: a.reports for a in my_appointments}
+        # unlinked patient reports (general uploads)
+        unlinked_reports = PatientReport.query.filter_by(appointment_id=None).all()
     else:
         my_appointments = Appointment.query.filter_by(patient_id=current_user.id).order_by(Appointment.date, Appointment.time).all()
         today_appointments = []
         upcoming = [a for a in my_appointments if a.date >= today_str and a.status == 'scheduled']
         appt_reports = {}
+        unlinked_reports = []
+
+    # Calendar: booked slots per doctor {doctor_id: [{"date":..,"time":..}]}
+    booked_slots = {}
+    for doc in doctors:
+        slots = Appointment.query.filter(
+            Appointment.doctor_id == doc.id,
+            Appointment.status.in_(['pending_payment','scheduled'])
+        ).with_entities(Appointment.date, Appointment.time).all()
+        booked_slots[doc.id] = [{'date': s.date, 'time': s.time} for s in slots]
+
     return render_template('appointments.html',
         doctors=doctors,
         my_appointments=my_appointments,
@@ -451,8 +439,20 @@ def appointments():
         upcoming=upcoming,
         now=now,
         today_str=today_str,
-        appt_reports=appt_reports
+        appt_reports=appt_reports,
+        unlinked_reports=unlinked_reports,
+        booked_slots_json=booked_slots,
     )
+
+@app.route('/api/booked-slots/<int:doctor_id>')
+@login_required
+def api_booked_slots(doctor_id):
+    """Return booked slots for a doctor (used by calendar JS)."""
+    slots = Appointment.query.filter(
+        Appointment.doctor_id == doctor_id,
+        Appointment.status.in_(['pending_payment','scheduled'])
+    ).with_entities(Appointment.date, Appointment.time).all()
+    return jsonify([{'date': s.date, 'time': s.time} for s in slots])
 
 @app.route('/book-appointment', methods=['POST'])
 @login_required
@@ -460,14 +460,15 @@ def book_appointment():
     doctor_id = request.form.get('doctor_id')
     date      = request.form.get('date')
     time      = request.form.get('time')
-    reason    = request.form.get('reason', '')
+    reason    = request.form.get('reason','')
 
     if not all([doctor_id, date, time]):
         flash('Please fill all required fields.', 'danger')
         return redirect(url_for('appointments'))
 
+    # Conflict detection
     conflict = Appointment.query.filter_by(doctor_id=doctor_id, date=date, time=time).filter(
-        Appointment.status.in_(['pending_payment', 'scheduled'])
+        Appointment.status.in_(['pending_payment','scheduled'])
     ).first()
     if conflict:
         flash('That time slot is already booked. Please choose another.', 'warning')
@@ -485,8 +486,14 @@ def book_appointment():
     )
     db.session.add(appt)
     db.session.commit()
-    return redirect(url_for('payment_page', appt_id=appt.id))
 
+    # Link any unattached reports from this patient to this appointment
+    unlinked = PatientReport.query.filter_by(patient_id=current_user.id, appointment_id=None).all()
+    for r in unlinked:
+        r.appointment_id = appt.id
+    db.session.commit()
+
+    return redirect(url_for('payment_page', appt_id=appt.id))
 
 @app.route('/payment/<int:appt_id>')
 @login_required
@@ -497,66 +504,49 @@ def payment_page(appt_id):
         return redirect(url_for('appointments'))
     if appt.payment_status == 'paid':
         return redirect(url_for('appointments'))
-
-    # Create Razorpay order
     try:
         client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
-        order  = client.order.create({
-            'amount':   appt.amount_paise,
-            'currency': 'INR',
-            'receipt':  f'appt_{appt.id}',
-            'notes':    {'appointment_id': str(appt.id), 'patient': current_user.name}
-        })
+        order  = client.order.create({'amount': appt.amount_paise, 'currency': 'INR',
+                                      'receipt': f'appt_{appt.id}',
+                                      'notes': {'appointment_id': str(appt.id), 'patient': current_user.name}})
         appt.razorpay_order_id = order['id']
         db.session.commit()
     except Exception as e:
-        print(f'Razorpay order error: {e}')
+        print(f'Razorpay error: {e}')
         order = None
-
-    return render_template('payment.html',
-        appt=appt,
-        order=order,
-        key_id=RAZORPAY_KEY_ID,
-        amount=appt.amount_paise,
-        user_name=current_user.name,
-        user_email=current_user.email
-    )
-
+    return render_template('payment.html', appt=appt, order=order,
+        key_id=RAZORPAY_KEY_ID, amount=appt.amount_paise,
+        user_name=current_user.name, user_email=current_user.email)
 
 @app.route('/payment/verify', methods=['POST'])
 @login_required
 def payment_verify():
-    """Called by Razorpay after successful payment — verifies signature and confirms appointment."""
     data = request.form
-    razorpay_order_id   = data.get('razorpay_order_id', '')
-    razorpay_payment_id = data.get('razorpay_payment_id', '')
-    razorpay_signature  = data.get('razorpay_signature', '')
-    appt_id             = data.get('appt_id', '')
-
+    rp_order   = data.get('razorpay_order_id','')
+    rp_payment = data.get('razorpay_payment_id','')
+    rp_sig     = data.get('razorpay_signature','')
+    appt_id    = data.get('appt_id','')
     appt = Appointment.query.get_or_404(int(appt_id))
     if appt.patient_id != current_user.id:
         flash('Unauthorized.', 'danger')
         return redirect(url_for('appointments'))
-
     try:
-        msg    = f"{razorpay_order_id}|{razorpay_payment_id}"
+        msg    = f"{rp_order}|{rp_payment}"
         digest = hmac.new(RAZORPAY_KEY_SECRET.encode(), msg.encode(), hashlib.sha256).hexdigest()
-        valid  = hmac.compare_digest(digest, razorpay_signature)
+        valid  = hmac.compare_digest(digest, rp_sig)
     except Exception:
         valid = False
-
     if valid:
         appt.payment_status      = 'paid'
         appt.status              = 'scheduled'
-        appt.razorpay_payment_id = razorpay_payment_id
-        appt.razorpay_order_id   = razorpay_order_id
+        appt.razorpay_payment_id = rp_payment
+        appt.razorpay_order_id   = rp_order
         db.session.commit()
-        flash('Payment successful! Your appointment is confirmed.', 'success')
+        _send_appointment_emails(appt)
+        flash('Payment successful! Your appointment is confirmed. Check your email.', 'success')
     else:
-        flash('Payment verification failed. Please contact support.', 'danger')
-
+        flash('Payment verification failed.', 'danger')
     return redirect(url_for('appointments'))
-
 
 @app.route('/payment/cancel/<int:appt_id>')
 @login_required
@@ -571,17 +561,15 @@ def payment_cancel(appt_id):
 @app.route('/set-meet-link/<int:appt_id>', methods=['POST'])
 @login_required
 def set_meet_link(appt_id):
-    """Doctor saves the real Google Meet link for this appointment."""
     appt = Appointment.query.get_or_404(appt_id)
     if appt.doctor_id != current_user.id:
         return jsonify({'error': 'Unauthorized'}), 403
-    link = request.json.get('link', '').strip()
+    link = request.json.get('link','').strip()
     if not link.startswith('https://meet.google.com/'):
         return jsonify({'error': 'Invalid Google Meet link'}), 400
     appt.meet_link = link
     db.session.commit()
     return jsonify({'ok': True, 'link': link})
-
 
 @app.route('/cancel-appointment/<int:appt_id>', methods=['POST'])
 @login_required
@@ -607,35 +595,54 @@ def complete_appointment(appt_id):
     flash('Appointment marked as completed.', 'success')
     return redirect(url_for('appointments'))
 
+# ── Prescription Routes ───────────────────────────────────────────────────────
+
+@app.route('/add-prescription/<int:appt_id>', methods=['POST'])
+@login_required
+def add_prescription(appt_id):
+    appt = Appointment.query.get_or_404(appt_id)
+    if appt.doctor_id != current_user.id:
+        flash('Unauthorized.', 'danger')
+        return redirect(url_for('appointments'))
+    existing = Prescription.query.filter_by(appointment_id=appt_id).first()
+    if existing:
+        existing.diagnosis   = request.form.get('diagnosis','').strip()
+        existing.medications = request.form.get('medications','').strip()
+        existing.instructions = request.form.get('instructions','').strip()
+        existing.follow_up   = request.form.get('follow_up','').strip()
+    else:
+        rx = Prescription(
+            appointment_id=appt_id,
+            doctor_id=current_user.id,
+            patient_id=appt.patient_id,
+            diagnosis=request.form.get('diagnosis','').strip(),
+            medications=request.form.get('medications','').strip(),
+            instructions=request.form.get('instructions','').strip(),
+            follow_up=request.form.get('follow_up','').strip(),
+        )
+        db.session.add(rx)
+    db.session.commit()
+    flash('Prescription saved.', 'success')
+    return redirect(url_for('appointments'))
+
 @app.route('/api/upcoming-appointments')
 @login_required
 def api_upcoming_appointments():
-    """Returns appointments starting within the next 30 minutes for notification popup."""
     now = datetime.utcnow()
     today_str = now.strftime('%Y-%m-%d')
-    current_time = now.strftime('%H:%M')
-
-    if current_user.role == 'patient':
-        appts = Appointment.query.filter_by(patient_id=current_user.id, status='scheduled').all()
-    else:
-        appts = Appointment.query.filter_by(doctor_id=current_user.id, status='scheduled').all()
-
+    appts = (Appointment.query.filter_by(patient_id=current_user.id, status='scheduled').all()
+             if current_user.role == 'patient'
+             else Appointment.query.filter_by(doctor_id=current_user.id, status='scheduled').all())
     alerts = []
     for a in appts:
         if a.date != today_str:
             continue
         try:
-            appt_dt = datetime.strptime(f"{a.date} {a.time}", '%Y-%m-%d %H:%M')
-            diff_minutes = (appt_dt - now).total_seconds() / 60
-            if 0 <= diff_minutes <= 30:
-                other = a.doctor.name if current_user.role == 'patient' else a.patient.name
-                alerts.append({
-                    'id': a.id,
-                    'time': a.time,
-                    'other': other,
-                    'minutes': int(diff_minutes),
-                    'room_id': a.room_id
-                })
+            diff = (datetime.strptime(f"{a.date} {a.time}", '%Y-%m-%d %H:%M') - now).total_seconds() / 60
+            if 0 <= diff <= 30:
+                alerts.append({'id': a.id, 'time': a.time,
+                                'other': a.doctor.name if current_user.role=='patient' else a.patient.name,
+                                'minutes': int(diff), 'room_id': a.room_id})
         except Exception:
             pass
     return jsonify(alerts)
@@ -645,35 +652,29 @@ def api_upcoming_appointments():
 def video_call(room_id):
     appt = Appointment.query.filter_by(room_id=room_id).first_or_404()
     if appt.patient_id != current_user.id and appt.doctor_id != current_user.id:
-        flash('Unauthorized access to this call.', 'danger')
+        flash('Unauthorized.', 'danger')
         return redirect(url_for('appointments'))
-    is_doctor = (current_user.id == appt.doctor_id)
-    return render_template('video_call.html', room_id=room_id, appointment=appt, is_doctor=is_doctor)
-
-# ── Static Pages ──────────────────────────────────────────────────────────────
+    return render_template('video_call.html', room_id=room_id, appointment=appt,
+                           is_doctor=(current_user.id == appt.doctor_id))
 
 @app.route('/about')
 def about():
     return render_template('about.html')
-
-# ── API: symptoms list for autocomplete ──────────────────────────────────────
 
 @app.route('/api/symptoms')
 def api_symptoms():
     return jsonify(list(symptoms_dict.keys()))
 
 # ── Init ──────────────────────────────────────────────────────────────────────
-
 with app.app_context():
     db.create_all()
-    # Seed demo doctors if none exist
     if not User.query.filter_by(role='doctor').first():
         demo_doctors = [
-            ('Dr. Arjun Mehta',  'arjun@pharmalane.com',  'Cardiologist',     'https://images.unsplash.com/photo-1612349317150-e413f6a5b16d?w=200&h=200&fit=crop&crop=face'),
-            ('Dr. Priya Sharma', 'priya@pharmalane.com',  'Neurologist',      'https://images.unsplash.com/photo-1559839734-2b71ea197ec2?w=200&h=200&fit=crop&crop=face'),
-            ('Dr. Rahul Verma',  'rahul@pharmalane.com',  'General Physician','https://images.unsplash.com/photo-1622253692010-333f2da6031d?w=200&h=200&fit=crop&crop=face'),
-            ('Dr. Sneha Kapoor', 'sneha@pharmalane.com',  'Dermatologist',    'https://images.unsplash.com/photo-1594824476967-48c8b964273f?w=200&h=200&fit=crop&crop=face'),
-            ('Dr. Vikram Singh', 'vikram@pharmalane.com', 'Orthopedist',      'https://images.unsplash.com/photo-1537368910025-700350fe46c7?w=200&h=200&fit=crop&crop=face'),
+            ('Dr. Arjun Mehta',  'arjun@pharmalane.com',  'Cardiologist',      'https://images.unsplash.com/photo-1612349317150-e413f6a5b16d?w=200&h=200&fit=crop&crop=face'),
+            ('Dr. Priya Sharma', 'priya@pharmalane.com',  'Neurologist',       'https://images.unsplash.com/photo-1559839734-2b71ea197ec2?w=200&h=200&fit=crop&crop=face'),
+            ('Dr. Rahul Verma',  'rahul@pharmalane.com',  'General Physician', 'https://images.unsplash.com/photo-1622253692010-333f2da6031d?w=200&h=200&fit=crop&crop=face'),
+            ('Dr. Sneha Kapoor', 'sneha@pharmalane.com',  'Dermatologist',     'https://images.unsplash.com/photo-1594824476967-48c8b964273f?w=200&h=200&fit=crop&crop=face'),
+            ('Dr. Vikram Singh', 'vikram@pharmalane.com', 'Orthopedist',       'https://images.unsplash.com/photo-1537368910025-700350fe46c7?w=200&h=200&fit=crop&crop=face'),
         ]
         for name, email, spec, photo in demo_doctors:
             pw = bcrypt.generate_password_hash('doctor123').decode('utf-8')
