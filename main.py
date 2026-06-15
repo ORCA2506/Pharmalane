@@ -14,7 +14,7 @@ import razorpay
 import hmac
 import hashlib
 from werkzeug.utils import secure_filename
-import google.generativeai as genai
+# Gemini via REST — no heavy SDK needed on Vercel
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'pharmalane-dev-key-change-in-prod')
@@ -26,7 +26,7 @@ app.config['SQLALCHEMY_DATABASE_URI'] = _db_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {'pool_pre_ping': True, 'pool_recycle': 300}
 
-UPLOAD_FOLDER = os.path.join('static', 'uploads', 'reports')
+UPLOAD_FOLDER = '/tmp/reports' if os.environ.get('VERCEL') else os.path.join('static', 'uploads', 'reports')
 ALLOWED_EXTENSIONS = {'pdf', 'doc', 'docx', 'txt', 'png', 'jpg', 'jpeg'}
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -49,7 +49,7 @@ login_manager.login_message_category = 'info'
 # ── Gemini ────────────────────────────────────────────────────────────────────
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
 if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
+    pass  # used in get_gemini_analysis via requests
 
 # ── Razorpay ──────────────────────────────────────────────────────────────────
 RAZORPAY_KEY_ID     = os.environ.get('RAZORPAY_KEY_ID',     'rzp_test_placeholder')
@@ -195,16 +195,20 @@ def get_gemini_analysis(symptoms_list, svm_disease):
             f"Patient symptoms: {symptoms_str}. ML model predicts: {svm_disease}.\n"
             "Reply in this exact format, plain text, no markdown:\n"
             "DISEASE: <name>\n"
-            "OVERVIEW: <2 sentences on what it is and why these symptoms indicate it>\n"
-            "MEDICATIONS: 1.<drug — dose — purpose> 2.<...> 3.<...> 4.<...> 5.<...>\n"
+            "OVERVIEW: <2 sentences>\n"
+            "MEDICATIONS: 1.<drug—dose—purpose> 2.<...> 3.<...> 4.<...> 5.<...>\n"
             "PRECAUTIONS: 1.<action> 2.<action> 3.<action> 4.<action>\n"
-            "DIET: 1.<food/advice> 2.<food/advice> 3.<avoid> 4.<hydration>\n"
-            "WORKOUT: 1.<exercise — duration> 2.<exercise> 3.<avoid>\n"
-            "DOCTOR_ALERT: <1 sentence red-flag symptoms requiring immediate care>"
+            "DIET: 1.<food> 2.<food> 3.<avoid> 4.<hydration>\n"
+            "WORKOUT: 1.<exercise—duration> 2.<exercise> 3.<avoid>\n"
+            "DOCTOR_ALERT: <1 sentence red-flag>"
         )
-        model = genai.GenerativeModel('gemini-1.5-flash')
-        resp  = model.generate_content(prompt)
-        return _parse_gemini(resp.text.strip())
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+        payload = {"contents": [{"parts": [{"text": prompt}]}],
+                   "generationConfig": {"temperature": 0.2, "maxOutputTokens": 600}}
+        resp = requests.post(url, json=payload, timeout=15)
+        resp.raise_for_status()
+        raw = resp.json()['candidates'][0]['content']['parts'][0]['text'].strip()
+        return _parse_gemini(raw)
     except Exception as e:
         print(f'Gemini error: {e}')
         return None
