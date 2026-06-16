@@ -1,0 +1,210 @@
+{% extends "base.html" %}
+{% block title %}Admin Panel — Medicure{% endblock %}
+{% block extra_css %}
+<style>
+  .admin-hero { background: linear-gradient(135deg,rgba(163,113,247,0.08) 0%,transparent 60%); border-bottom:1px solid var(--border); padding:2rem 0 1.5rem; }
+  .admin-hero h1 { font-size:1.6rem; font-weight:700; }
+  .stat-card { background:var(--bg-card); border:1px solid var(--border); border-radius:12px; padding:1.2rem; text-align:center; }
+  .stat-card .num { font-size:1.8rem; font-weight:700; color:var(--primary); }
+  .stat-card .lbl { font-size:0.78rem; color:var(--text-muted); margin-top:0.2rem; }
+  .section-card { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:1.5rem; margin-bottom:1.5rem; }
+  .section-card h5 { font-weight:700; margin-bottom:1.2rem; font-size:1rem; }
+  table { width:100%; border-collapse:collapse; font-size:0.83rem; }
+  th { color:var(--text-muted); font-weight:600; padding:0.5rem 0.7rem; border-bottom:1px solid var(--border); text-align:left; white-space:nowrap; }
+  td { padding:0.55rem 0.7rem; border-bottom:1px solid rgba(255,255,255,0.04); vertical-align:middle; }
+  tr:last-child td { border-bottom:none; }
+  .badge-role { padding:0.2rem 0.6rem; border-radius:20px; font-size:0.72rem; font-weight:600; }
+  .role-doctor { background:rgba(88,166,255,0.12); color:#58a6ff; }
+  .role-patient { background:rgba(0,201,167,0.12); color:var(--primary); }
+  .role-admin { background:rgba(163,113,247,0.12); color:#a371f7; }
+  .form-control,.form-select { background:var(--bg-card2)!important; border:1px solid var(--border)!important; color:#e6edf3!important; border-radius:8px; font-size:0.85rem; }
+  .form-control:focus,.form-select:focus { border-color:var(--primary)!important; box-shadow:0 0 0 2px rgba(0,201,167,0.1)!important; }
+  .btn-sm-primary { background:var(--primary); color:#000; border:none; border-radius:6px; padding:0.3rem 0.8rem; font-size:0.78rem; font-weight:600; cursor:pointer; transition:all 0.15s; }
+  .btn-sm-primary:hover { background:var(--primary-dark); }
+  .btn-sm-danger { background:transparent; color:#f85149; border:1px solid rgba(248,81,73,0.3); border-radius:6px; padding:0.3rem 0.7rem; font-size:0.78rem; cursor:pointer; transition:all 0.15s; }
+  .btn-sm-danger:hover { background:rgba(248,81,73,0.1); }
+  .btn-sm-purple { background:transparent; color:#a371f7; border:1px solid rgba(163,113,247,0.3); border-radius:6px; padding:0.3rem 0.7rem; font-size:0.78rem; cursor:pointer; transition:all 0.15s; }
+  .btn-sm-purple:hover { background:rgba(163,113,247,0.1); }
+  .status-badge { padding:0.15rem 0.55rem; border-radius:20px; font-size:0.7rem; font-weight:600; }
+  .status-scheduled { background:rgba(0,201,167,0.12); color:var(--primary); }
+  .status-pending_payment { background:rgba(240,165,0,0.12); color:#f0a500; }
+  .status-completed { background:rgba(63,185,80,0.12); color:#3fb950; }
+  .status-cancelled { background:rgba(248,81,73,0.12); color:#f85149; }
+  .add-form { background:var(--bg-card2); border:1px solid var(--border); border-radius:12px; padding:1.2rem; margin-bottom:1.2rem; }
+  .modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.75); z-index:9999; align-items:center; justify-content:center; }
+  .modal-overlay.active { display:flex; }
+  .modal-box { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:1.8rem; width:100%; max-width:460px; position:relative; }
+  .modal-close { position:absolute; top:0.8rem; right:1rem; background:none; border:none; color:var(--text-muted); font-size:1.2rem; cursor:pointer; }
+  .table-wrap { overflow-x:auto; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="admin-hero">
+  <div class="container">
+    <h1><i class="fa fa-shield-halved me-2" style="color:#a371f7"></i>Admin Panel</h1>
+    <p style="color:var(--text-muted);font-size:0.85rem;margin-top:0.3rem;">Full control over users, appointments and meet links.</p>
+  </div>
+</div>
+
+<div class="container py-4">
+
+  <!-- Stats -->
+  <div class="row g-3 mb-4">
+    <div class="col-6 col-md-3"><div class="stat-card"><div class="num">{{ doctors|length }}</div><div class="lbl">Doctors</div></div></div>
+    <div class="col-6 col-md-3"><div class="stat-card"><div class="num">{{ patients|length }}</div><div class="lbl">Patients</div></div></div>
+    <div class="col-6 col-md-3"><div class="stat-card"><div class="num" style="color:#58a6ff">{{ appts|selectattr('status','eq','scheduled')|list|length }}</div><div class="lbl">Scheduled</div></div></div>
+    <div class="col-6 col-md-3"><div class="stat-card"><div class="num" style="color:#3fb950">{{ appts|selectattr('status','eq','completed')|list|length }}</div><div class="lbl">Completed</div></div></div>
+  </div>
+
+  <!-- Add User -->
+  <div class="section-card">
+    <h5><i class="fa fa-user-plus me-2" style="color:var(--primary)"></i>Add New User</h5>
+    <div class="add-form">
+      <form method="POST" action="{{ url_for('admin_add_user') }}">
+        <div class="row g-2">
+          <div class="col-md-3"><input type="text" name="name" class="form-control" placeholder="Full Name" required></div>
+          <div class="col-md-3"><input type="email" name="email" class="form-control" placeholder="Email" required></div>
+          <div class="col-md-2"><input type="password" name="password" class="form-control" placeholder="Password" required></div>
+          <div class="col-md-2">
+            <select name="role" class="form-select" id="addRoleSelect" onchange="toggleSpecialty(this.value)">
+              <option value="patient">Patient</option>
+              <option value="doctor">Doctor</option>
+            </select>
+          </div>
+          <div class="col-md-2" id="specialtyField" style="display:none;">
+            <input type="text" name="specialty" class="form-control" placeholder="Specialty">
+          </div>
+          <div class="col-12" id="photoField" style="display:none;">
+            <input type="text" name="profile_image" class="form-control" placeholder="Doctor photo URL (optional)">
+          </div>
+          <div class="col-12">
+            <button type="submit" class="btn-sm-primary"><i class="fa fa-plus me-1"></i>Add User</button>
+          </div>
+        </div>
+      </form>
+    </div>
+
+    <!-- Doctors table -->
+    <h6 style="font-weight:600;margin-bottom:0.6rem;color:#58a6ff;"><i class="fa fa-user-md me-1"></i>Doctors</h6>
+    <div class="table-wrap mb-3">
+      <table>
+        <thead><tr><th>Photo</th><th>Name</th><th>Email</th><th>Specialty</th><th>Action</th></tr></thead>
+        <tbody>
+          {% for doc in doctors %}
+          <tr>
+            <td>
+              {% if doc.profile_image %}
+              <img src="{{ doc.profile_image }}" style="width:32px;height:32px;border-radius:50%;object-fit:cover;">
+              {% else %}<span style="color:var(--text-muted)">—</span>{% endif %}
+            </td>
+            <td>{{ doc.name }}</td>
+            <td style="color:var(--text-muted);">{{ doc.email }}</td>
+            <td>{{ doc.specialty or '—' }}</td>
+            <td>
+              <form method="POST" action="{{ url_for('admin_delete_user', user_id=doc.id) }}" style="display:inline;" onsubmit="return confirm('Delete {{ doc.name }}?')">
+                <button type="submit" class="btn-sm-danger"><i class="fa fa-trash"></i></button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Patients table -->
+    <h6 style="font-weight:600;margin-bottom:0.6rem;color:var(--primary);"><i class="fa fa-users me-1"></i>Patients</h6>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Name</th><th>Email</th><th>Action</th></tr></thead>
+        <tbody>
+          {% for pat in patients %}
+          <tr>
+            <td>{{ pat.name }}</td>
+            <td style="color:var(--text-muted);">{{ pat.email }}</td>
+            <td>
+              <form method="POST" action="{{ url_for('admin_delete_user', user_id=pat.id) }}" style="display:inline;" onsubmit="return confirm('Delete {{ pat.name }}?')">
+                <button type="submit" class="btn-sm-danger"><i class="fa fa-trash"></i></button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Appointments -->
+  <div class="section-card">
+    <h5><i class="fa fa-calendar-check me-2" style="color:#58a6ff"></i>All Appointments</h5>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Patient</th><th>Doctor</th><th>Date</th><th>Time</th><th>Status</th><th>Payment</th><th>Meet Link</th><th>Actions</th></tr></thead>
+        <tbody>
+          {% for appt in appts %}
+          <tr>
+            <td>{{ appt.patient.name }}</td>
+            <td>{{ appt.doctor.name }}</td>
+            <td style="white-space:nowrap;">{{ appt.date }}</td>
+            <td>{{ appt.time }}</td>
+            <td><span class="status-badge status-{{ appt.status }}">{{ appt.status.replace('_',' ').capitalize() }}</span></td>
+            <td><span style="font-size:0.72rem;color:{{ '#3fb950' if appt.payment_status=='paid' else '#f0a500' }};">{{ appt.payment_status }}</span></td>
+            <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+              {% if appt.meet_link %}
+              <a href="{{ appt.meet_link }}" target="_blank" style="color:#58a6ff;font-size:0.75rem;">{{ appt.meet_link[:30] }}...</a>
+              {% else %}<span style="color:var(--text-muted);font-size:0.75rem;">Not set</span>{% endif %}
+            </td>
+            <td style="white-space:nowrap;">
+              <button class="btn-sm-purple" onclick="openApptModal({{ appt.id }}, '{{ appt.status }}', '{{ appt.meet_link or '' }}')">
+                <i class="fa fa-edit"></i> Edit
+              </button>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<!-- Edit Appointment Modal -->
+<div id="apptModal" class="modal-overlay" onclick="if(event.target===this)closeApptModal()">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeApptModal()">&times;</button>
+    <h6 style="font-weight:700;margin-bottom:1.2rem;color:#a371f7;"><i class="fa fa-edit me-2"></i>Edit Appointment</h6>
+    <form method="POST" id="apptForm">
+      <div class="mb-3">
+        <label style="font-size:0.83rem;color:#c9d1d9;display:block;margin-bottom:0.3rem;">Status</label>
+        <select name="status" id="apptStatus" class="form-select">
+          <option value="pending_payment">Pending Payment</option>
+          <option value="scheduled">Scheduled</option>
+          <option value="completed">Completed</option>
+          <option value="cancelled">Cancelled</option>
+        </select>
+      </div>
+      <div class="mb-3">
+        <label style="font-size:0.83rem;color:#c9d1d9;display:block;margin-bottom:0.3rem;">Google Meet Link</label>
+        <input type="text" name="meet_link" id="apptMeetLink" class="form-control" placeholder="https://meet.google.com/xxx-xxxx-xxx">
+      </div>
+      <button type="submit" class="btn-sm-primary" style="width:100%;padding:0.6rem;font-size:0.9rem;"><i class="fa fa-save me-1"></i>Save Changes</button>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function toggleSpecialty(role) {
+  document.getElementById('specialtyField').style.display = role==='doctor' ? 'block' : 'none';
+  document.getElementById('photoField').style.display = role==='doctor' ? 'block' : 'none';
+}
+function openApptModal(id, status, meetLink) {
+  document.getElementById('apptForm').action = '/admin/update-appt/' + id;
+  document.getElementById('apptStatus').value = status;
+  document.getElementById('apptMeetLink').value = meetLink;
+  document.getElementById('apptModal').classList.add('active');
+}
+function closeApptModal() { document.getElementById('apptModal').classList.remove('active'); }
+</script>
+{% endblock %}

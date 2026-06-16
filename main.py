@@ -98,14 +98,18 @@ class PatientReport(db.Model):
     patient        = db.relationship('User', backref='reports')
 
 class Prescription(db.Model):
+    prescription_file = db.Column(db.String(300), nullable=True)  # uploaded PDF/JPG
+# dummy placeholder replaced below
+class Prescription(db.Model):
     id             = db.Column(db.Integer, primary_key=True)
     appointment_id = db.Column(db.Integer, db.ForeignKey('appointment.id'), nullable=False)
     doctor_id      = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     patient_id     = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     diagnosis      = db.Column(db.String(200), nullable=True)
-    medications    = db.Column(db.Text, nullable=True)   # free-text
+    medications    = db.Column(db.Text, nullable=True)
     instructions   = db.Column(db.Text, nullable=True)
     follow_up      = db.Column(db.String(100), nullable=True)
+    prescription_file = db.Column(db.String(300), nullable=True)
     created_at     = db.Column(db.DateTime, default=datetime.utcnow)
     doctor         = db.relationship('User', foreign_keys=[doctor_id])
     patient        = db.relationship('User', foreign_keys=[patient_id])
@@ -238,35 +242,32 @@ def _parse_gemini(raw):
 # ── Email helpers ─────────────────────────────────────────────────────────────
 
 def _send_appointment_emails(appt):
-    """Send confirmation emails to patient and doctor after payment."""
     try:
-        doc  = User.query.get(appt.doctor_id)
-        pat  = User.query.get(appt.patient_id)
-        body_patient = (
-            f"Hi {pat.name},\n\n"
-            f"Your appointment has been confirmed!\n\n"
-            f"  Doctor  : {doc.name} ({doc.specialty})\n"
-            f"  Date    : {appt.date}\n"
-            f"  Time    : {appt.time}\n"
-            f"  Reason  : {appt.reason or 'Not specified'}\n\n"
-            f"Join your video call at: {url_for('video_call', room_id=appt.room_id, _external=True)}\n\n"
-            f"Please upload any prior reports before the appointment.\n\n"
-            f"— PharmaLane Team"
-        )
-        body_doctor = (
-            f"Hi {doc.name},\n\n"
-            f"New appointment scheduled:\n\n"
-            f"  Patient : {pat.name} ({pat.email})\n"
-            f"  Date    : {appt.date}\n"
-            f"  Time    : {appt.time}\n"
-            f"  Reason  : {appt.reason or 'Not specified'}\n\n"
-            f"View appointment: {url_for('appointments', _external=True)}\n\n"
-            f"— PharmaLane"
-        )
-        mail.send(Message(subject="Appointment Confirmed — PharmaLane",
-                          recipients=[pat.email], body=body_patient))
-        mail.send(Message(subject=f"New Appointment: {pat.name} on {appt.date}",
-                          recipients=[doc.email], body=body_doctor))
+        if not app.config.get('MAIL_USERNAME'):
+            return
+        doc = User.query.get(appt.doctor_id)
+        pat = User.query.get(appt.patient_id)
+        with app.app_context():
+            body_patient = (
+                f"Hi {pat.name},\n\n"
+                f"Your appointment is confirmed!\n\n"
+                f"  Doctor : {doc.name} ({doc.specialty})\n"
+                f"  Date   : {appt.date}\n"
+                f"  Time   : {appt.time}\n"
+                f"  Reason : {appt.reason or 'Not specified'}\n\n"
+                f"Login to Medicure to join your video call.\n\n— Medicure Team"
+            )
+            body_doctor = (
+                f"Hi {doc.name},\n\nNew appointment scheduled:\n\n"
+                f"  Patient : {pat.name} ({pat.email})\n"
+                f"  Date    : {appt.date}\n"
+                f"  Time    : {appt.time}\n"
+                f"  Reason  : {appt.reason or 'Not specified'}\n\n— Medicure"
+            )
+            mail.send(Message(subject="Appointment Confirmed — Medicure",
+                              recipients=[pat.email], body=body_patient))
+            mail.send(Message(subject=f"New Appointment: {pat.name} on {appt.date}",
+                              recipients=[doc.email], body=body_doctor))
     except Exception as e:
         print(f'Email error: {e}')
 
@@ -616,26 +617,31 @@ def complete_appointment(appt_id):
 @login_required
 def add_prescription(appt_id):
     appt = Appointment.query.get_or_404(appt_id)
-    if appt.doctor_id != current_user.id:
+    if appt.doctor_id != current_user.id and current_user.role != 'admin':
         flash('Unauthorized.', 'danger')
         return redirect(url_for('appointments'))
     existing = Prescription.query.filter_by(appointment_id=appt_id).first()
+    # Handle prescription file upload
+    rx_file = request.files.get('prescription_file')
+    saved_rx_file = existing.prescription_file if existing else None
+    if rx_file and rx_file.filename:
+        ext = rx_file.filename.rsplit('.',1)[-1].lower()
+        if ext in {'pdf','jpg','jpeg','png'}:
+            fname = f"rx_{uuid.uuid4().hex}.{ext}"
+            rx_file.save(os.path.join(app.config['UPLOAD_FOLDER'], fname))
+            saved_rx_file = fname
+    data = dict(
+        diagnosis=request.form.get('diagnosis','').strip(),
+        medications=request.form.get('medications','').strip(),
+        instructions=request.form.get('instructions','').strip(),
+        follow_up=request.form.get('follow_up','').strip(),
+        prescription_file=saved_rx_file
+    )
     if existing:
-        existing.diagnosis   = request.form.get('diagnosis','').strip()
-        existing.medications = request.form.get('medications','').strip()
-        existing.instructions = request.form.get('instructions','').strip()
-        existing.follow_up   = request.form.get('follow_up','').strip()
+        for k,v in data.items(): setattr(existing, k, v)
     else:
-        rx = Prescription(
-            appointment_id=appt_id,
-            doctor_id=current_user.id,
-            patient_id=appt.patient_id,
-            diagnosis=request.form.get('diagnosis','').strip(),
-            medications=request.form.get('medications','').strip(),
-            instructions=request.form.get('instructions','').strip(),
-            follow_up=request.form.get('follow_up','').strip(),
-        )
-        db.session.add(rx)
+        db.session.add(Prescription(appointment_id=appt_id, doctor_id=appt.doctor_id,
+                                    patient_id=appt.patient_id, **data))
     db.session.commit()
     flash('Prescription saved.', 'success')
     return redirect(url_for('appointments'))
@@ -680,9 +686,87 @@ def about():
 def api_symptoms():
     return jsonify(list(symptoms_dict.keys()))
 
+# ── Admin Routes ─────────────────────────────────────────────────────────────
+
+def admin_required(f):
+    from functools import wraps
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not current_user.is_authenticated or current_user.role != 'admin':
+            flash('Admin access required.', 'danger')
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated
+
+@app.route('/admin')
+@login_required
+@admin_required
+def admin_panel():
+    doctors  = User.query.filter_by(role='doctor').all()
+    patients = User.query.filter_by(role='patient').all()
+    appts    = Appointment.query.order_by(Appointment.date.desc(), Appointment.time).all()
+    return render_template('admin.html', doctors=doctors, patients=patients, appts=appts)
+
+@app.route('/admin/add-user', methods=['POST'])
+@login_required
+@admin_required
+def admin_add_user():
+    name      = request.form.get('name','').strip()
+    email     = request.form.get('email','').strip().lower()
+    password  = request.form.get('password','')
+    role      = request.form.get('role','patient')
+    specialty = request.form.get('specialty','').strip()
+    photo     = request.form.get('profile_image','').strip() or None
+    if User.query.filter_by(email=email).first():
+        flash('Email already exists.', 'danger')
+        return redirect(url_for('admin_panel'))
+    hashed = bcrypt.generate_password_hash(password).decode('utf-8')
+    db.session.add(User(name=name, email=email, password=hashed, role=role,
+                        specialty=specialty if role=='doctor' else None,
+                        profile_image=photo if role=='doctor' else None))
+    db.session.commit()
+    flash(f'{role.capitalize()} {name} added.', 'success')
+    return redirect(url_for('admin_panel'))
+
+@app.route('/admin/delete-user/<int:user_id>', methods=['POST'])
+@login_required
+@admin_required
+def admin_delete_user(user_id):
+    user = User.query.get_or_404(user_id)
+    db.session.delete(user)
+    db.session.commit()
+    flash('User deleted.', 'info')
+    return redirect(url_for('admin_panel'))
+
+@app.route('/admin/set-meet-link/<int:appt_id>', methods=['POST'])
+@login_required
+@admin_required
+def admin_set_meet_link(appt_id):
+    appt = Appointment.query.get_or_404(appt_id)
+    appt.meet_link = request.form.get('meet_link','').strip()
+    db.session.commit()
+    flash('Meet link updated.', 'success')
+    return redirect(url_for('admin_panel'))
+
+@app.route('/admin/update-appt/<int:appt_id>', methods=['POST'])
+@login_required
+@admin_required
+def admin_update_appt(appt_id):
+    appt = Appointment.query.get_or_404(appt_id)
+    appt.status = request.form.get('status', appt.status)
+    appt.meet_link = request.form.get('meet_link', appt.meet_link or '').strip() or appt.meet_link
+    db.session.commit()
+    flash('Appointment updated.', 'success')
+    return redirect(url_for('admin_panel'))
+
 # ── Init ──────────────────────────────────────────────────────────────────────
 with app.app_context():
     db.create_all()
+    # Seed admin
+    if not User.query.filter_by(role='admin').first():
+        pw = bcrypt.generate_password_hash('admin@medicure123').decode('utf-8')
+        db.session.add(User(name='Admin', email='admin@medicure.com', password=pw, role='admin'))
+        db.session.commit()
     if not User.query.filter_by(role='doctor').first():
         demo_doctors = [
             ('Dr. Arjun Mehta',  'arjun@pharmalane.com',  'Cardiologist',      'https://images.unsplash.com/photo-1612349317150-e413f6a5b16d?w=200&h=200&fit=crop&crop=face'),

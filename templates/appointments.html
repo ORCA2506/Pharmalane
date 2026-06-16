@@ -135,6 +135,12 @@
                 {% endif %}
                 <h6>{{ doc.name }}</h6>
                 <small><span class="online-dot"></span>{{ doc.specialty }}</small>
+                <div style="margin-top:0.5rem;">
+                  <button type="button" class="btn-report" style="font-size:0.7rem;padding:0.2rem 0.6rem;"
+                    onclick="event.stopPropagation(); openDocModal('{{ doc.name }}','{{ doc.specialty }}','{{ doc.profile_image or '' }}')">
+                    <i class="fa fa-info-circle me-1"></i>Details
+                  </button>
+                </div>
               </div>
             </div>
             {% endfor %}
@@ -276,6 +282,11 @@
             {% if rx.medications %}<div style="margin-top:0.3rem;"><strong>Medications:</strong><br>{{ rx.medications|replace('\n','<br>')|safe }}</div>{% endif %}
             {% if rx.instructions %}<div style="margin-top:0.3rem;"><strong>Instructions:</strong> {{ rx.instructions }}</div>{% endif %}
             {% if rx.follow_up %}<div style="margin-top:0.3rem;"><strong>Follow-up:</strong> {{ rx.follow_up }}</div>{% endif %}
+            {% if rx.prescription_file %}
+            <div style="margin-top:0.5rem;">
+              <a href="{{ url_for('static', filename='uploads/reports/' + rx.prescription_file) }}" target="_blank" style="color:#a371f7;font-size:0.8rem;"><i class="fa fa-file-medical me-1"></i>Download Prescription</a>
+            </div>
+            {% endif %}
           </div>
           {% endif %}
 
@@ -310,6 +321,19 @@
   </div>
 </div>
 
+<!-- ── Doctor Detail Modal ── -->
+<div id="docModal" class="modal-overlay" onclick="if(event.target===this)closeDocModal()">
+  <div class="modal-box" style="max-width:380px;text-align:center;">
+    <button class="modal-close" onclick="closeDocModal()">&times;</button>
+    <img id="docModalImg" src="" style="width:90px;height:90px;border-radius:50%;object-fit:cover;border:3px solid rgba(0,201,167,0.4);margin:0 auto 1rem;display:block;">
+    <div id="docModalImgFallback" style="display:none;width:90px;height:90px;border-radius:50%;background:rgba(0,201,167,0.15);margin:0 auto 1rem;align-items:center;justify-content:center;font-size:2rem;font-weight:700;color:var(--primary);border:3px solid rgba(0,201,167,0.4);"></div>
+    <h5 id="docModalName" style="font-weight:700;margin-bottom:0.3rem;"></h5>
+    <div id="docModalSpec" style="color:var(--primary);font-size:0.85rem;margin-bottom:1rem;"></div>
+    <p style="color:var(--text-muted);font-size:0.82rem;margin-bottom:1.2rem;">Available Mon–Sat · 9:00 AM – 6:00 PM<br>Video consultation · ₹500 per session</p>
+    <button class="btn-book" onclick="startBooking(); closeDocModal();"><i class="fa fa-calendar-plus me-2"></i>Book Appointment</button>
+  </div>
+</div>
+
 <!-- ── Upload Report Modal (post-booking) ── -->
 <div id="reportModal" class="modal-overlay" onclick="if(event.target===this)closeReportModal()">
   <div class="modal-box">
@@ -334,7 +358,7 @@
   <div class="modal-box">
     <button class="modal-close" onclick="closeRxModal()">&times;</button>
     <h6 style="font-weight:700;margin-bottom:1.2rem;color:#a371f7;"><i class="fa fa-prescription me-2"></i>Prescription — <span id="rxPatientName"></span></h6>
-    <form method="POST" id="rxForm">
+    <form method="POST" id="rxForm" enctype="multipart/form-data">
       <div class="mb-3">
         <label class="form-label">Diagnosis</label>
         <input type="text" name="diagnosis" id="rxDiagnosis" class="form-control" placeholder="e.g. Type 2 Diabetes Mellitus">
@@ -351,6 +375,10 @@
       <div class="mb-3">
         <label class="form-label">Follow-up Date <span style="color:var(--text-muted)">(optional)</span></label>
         <input type="text" name="follow_up" id="rxFollowUp" class="form-control" placeholder="e.g. 2 weeks / 15 Jan 2025">
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Upload Prescription File <span style="color:var(--text-muted)">(PDF/JPG — optional)</span></label>
+        <input type="file" name="prescription_file" class="form-control" accept=".pdf,.jpg,.jpeg,.png">
       </div>
       <button type="submit" class="btn-book" style="background:#a371f7;"><i class="fa fa-save me-2"></i>Save Prescription</button>
     </form>
@@ -478,6 +506,26 @@ function selectDoctor(id, el) {
   document.getElementById('selectedTimeInput').value = '';
   document.getElementById('timeSlotSection').style.display='none';
   renderCal();
+}
+
+// ── Doctor detail modal ──
+let _pendingDoctorSelect = null;
+function openDocModal(name, spec, photo) {
+  const img = document.getElementById('docModalImg');
+  const fallback = document.getElementById('docModalImgFallback');
+  document.getElementById('docModalName').textContent = name;
+  document.getElementById('docModalSpec').textContent = spec;
+  if (photo) {
+    img.src = photo; img.style.display='block'; fallback.style.display='none';
+    img.onerror = () => { img.style.display='none'; fallback.style.display='flex'; fallback.textContent=name[0]; };
+  } else {
+    img.style.display='none'; fallback.style.display='flex'; fallback.textContent=name[0];
+  }
+  document.getElementById('docModal').classList.add('active');
+}
+function closeDocModal() { document.getElementById('docModal').classList.remove('active'); }
+function startBooking() {
+  document.querySelector('.booking-card').scrollIntoView({behavior:'smooth'});
 }
 
 // ── Report modal ──
