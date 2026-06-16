@@ -772,6 +772,12 @@ def admin_update_appt(appt_id):
 # ── Init ──────────────────────────────────────────────────────────────────────
 with app.app_context():
     db.create_all()
+    # Add missing columns if they don't exist (safe migration)
+    try:
+        db.session.execute(db.text('ALTER TABLE prescription ADD COLUMN IF NOT EXISTS prescription_file VARCHAR(300)'))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
     # Seed admin
     if not User.query.filter_by(role='admin').first():
         pw = bcrypt.generate_password_hash('admin@medicure123').decode('utf-8')
