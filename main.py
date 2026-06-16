@@ -418,54 +418,67 @@ def upload_report(appt_id):
 @app.route('/appointments')
 @login_required
 def appointments():
-    doctors = User.query.filter_by(role='doctor').all()
-    now = datetime.utcnow()
-    today_str = now.strftime('%Y-%m-%d')
+    try:
+        doctors = User.query.filter_by(role='doctor').all()
+        now = datetime.utcnow()
+        today_str = now.strftime('%Y-%m-%d')
 
-    if current_user.role == 'doctor':
-        my_appointments = Appointment.query.filter_by(doctor_id=current_user.id).order_by(Appointment.date, Appointment.time).all()
-        today_appointments = [a for a in my_appointments if a.date == today_str and a.status == 'scheduled']
-        upcoming = [a for a in my_appointments if a.date >= today_str and a.status == 'scheduled']
-        appt_reports = {a.id: a.reports for a in my_appointments}
-        # unlinked patient reports (general uploads)
-        unlinked_reports = PatientReport.query.filter_by(appointment_id=None).all()
-    else:
-        my_appointments = Appointment.query.filter_by(patient_id=current_user.id).order_by(Appointment.date, Appointment.time).all()
-        today_appointments = []
-        upcoming = [a for a in my_appointments if a.date >= today_str and a.status == 'scheduled']
-        appt_reports = {}
-        unlinked_reports = []
+        if current_user.role == 'doctor':
+            my_appointments = Appointment.query.filter_by(doctor_id=current_user.id).order_by(Appointment.date, Appointment.time).all()
+            today_appointments = [a for a in my_appointments if a.date == today_str and a.status == 'scheduled']
+            upcoming = [a for a in my_appointments if a.date >= today_str and a.status == 'scheduled']
+            appt_reports = {a.id: a.reports for a in my_appointments}
+            unlinked_reports = PatientReport.query.filter_by(appointment_id=None).all()
+        else:
+            my_appointments = Appointment.query.filter_by(patient_id=current_user.id).order_by(Appointment.date, Appointment.time).all()
+            today_appointments = []
+            upcoming = [a for a in my_appointments if a.date >= today_str and a.status == 'scheduled']
+            appt_reports = {}
+            unlinked_reports = []
 
-    # Calendar: booked slots per doctor {doctor_id: [{"date":..,"time":..}]}
-    booked_slots = {}
-    for doc in doctors:
-        slots = Appointment.query.filter(
-            Appointment.doctor_id == doc.id,
-            Appointment.status.in_(['pending_payment','scheduled'])
-        ).with_entities(Appointment.date, Appointment.time).all()
-        booked_slots[doc.id] = [{'date': s.date, 'time': s.time} for s in slots]
+        booked_slots = {}
+        for doc in doctors:
+            try:
+                slots = db.session.execute(
+                    db.select(Appointment.date, Appointment.time).where(
+                        Appointment.doctor_id == doc.id,
+                        Appointment.status.in_(['pending_payment', 'scheduled'])
+                    )
+                ).all()
+                booked_slots[str(doc.id)] = [{'date': s.date, 'time': s.time} for s in slots]
+            except Exception:
+                booked_slots[str(doc.id)] = []
 
-    return render_template('appointments.html',
-        doctors=doctors,
-        my_appointments=my_appointments,
-        today_appointments=today_appointments,
-        upcoming=upcoming,
-        now=now,
-        today_str=today_str,
-        appt_reports=appt_reports,
-        unlinked_reports=unlinked_reports,
-        booked_slots_json=booked_slots,
-    )
+        return render_template('appointments.html',
+            doctors=doctors,
+            my_appointments=my_appointments,
+            today_appointments=today_appointments,
+            upcoming=upcoming,
+            now=now,
+            today_str=today_str,
+            appt_reports=appt_reports,
+            unlinked_reports=unlinked_reports,
+            booked_slots_json=booked_slots,
+        )
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        flash(f'Error loading appointments: {str(e)}', 'danger')
+        return redirect(url_for('dashboard'))
 
 @app.route('/api/booked-slots/<int:doctor_id>')
 @login_required
 def api_booked_slots(doctor_id):
-    """Return booked slots for a doctor (used by calendar JS)."""
-    slots = Appointment.query.filter(
-        Appointment.doctor_id == doctor_id,
-        Appointment.status.in_(['pending_payment','scheduled'])
-    ).with_entities(Appointment.date, Appointment.time).all()
-    return jsonify([{'date': s.date, 'time': s.time} for s in slots])
+    try:
+        slots = db.session.execute(
+            db.select(Appointment.date, Appointment.time).where(
+                Appointment.doctor_id == doctor_id,
+                Appointment.status.in_(['pending_payment', 'scheduled'])
+            )
+        ).all()
+        return jsonify([{'date': s.date, 'time': s.time} for s in slots])
+    except Exception as e:
+        return jsonify([])
 
 @app.route('/book-appointment', methods=['POST'])
 @login_required

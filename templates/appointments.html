@@ -496,6 +496,7 @@ function calNext() {
 }
 
 function selectDoctor(id, el) {
+    id = String(id);
   selectedDoctorId = id;
   document.querySelectorAll('.doctor-card').forEach(c=>c.classList.remove('selected'));
   el.classList.add('selected');
