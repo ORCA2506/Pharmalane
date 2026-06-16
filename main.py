@@ -98,9 +98,6 @@ class PatientReport(db.Model):
     patient        = db.relationship('User', backref='reports')
 
 class Prescription(db.Model):
-    prescription_file = db.Column(db.String(300), nullable=True)  # uploaded PDF/JPG
-# dummy placeholder replaced below
-class Prescription(db.Model):
     id             = db.Column(db.Integer, primary_key=True)
     appointment_id = db.Column(db.Integer, db.ForeignKey('appointment.id'), nullable=False)
     doctor_id      = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
