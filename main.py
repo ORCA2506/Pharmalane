@@ -66,6 +66,7 @@ class User(db.Model, UserMixin):
     role          = db.Column(db.String(20), default='patient')
     specialty     = db.Column(db.String(100), nullable=True)
     profile_image = db.Column(db.String(300), nullable=True)
+    fees          = db.Column(db.Integer, default=500)  # consultation fee in ₹
     created_at    = db.Column(db.DateTime, default=datetime.utcnow)
     appointments_as_patient = db.relationship('Appointment', foreign_keys='Appointment.patient_id', backref='patient', lazy=True)
     appointments_as_doctor  = db.relationship('Appointment', foreign_keys='Appointment.doctor_id',  backref='doctor',  lazy=True)
@@ -764,9 +765,40 @@ def admin_set_meet_link(appt_id):
 def admin_update_appt(appt_id):
     appt = Appointment.query.get_or_404(appt_id)
     appt.status = request.form.get('status', appt.status)
-    appt.meet_link = request.form.get('meet_link', appt.meet_link or '').strip() or appt.meet_link
+    meet = request.form.get('meet_link', '').strip()
+    if meet:
+        appt.meet_link = meet
     db.session.commit()
     flash('Appointment updated.', 'success')
+    return redirect(url_for('admin_panel'))
+
+@app.route('/admin/delete-appt/<int:appt_id>', methods=['POST'])
+@login_required
+@admin_required
+def admin_delete_appt(appt_id):
+    appt = Appointment.query.get_or_404(appt_id)
+    # delete related prescriptions and reports first
+    Prescription.query.filter_by(appointment_id=appt_id).delete()
+    PatientReport.query.filter_by(appointment_id=appt_id).delete()
+    db.session.delete(appt)
+    db.session.commit()
+    flash('Appointment deleted.', 'info')
+    return redirect(url_for('admin_panel'))
+
+@app.route('/admin/update-doctor/<int:user_id>', methods=['POST'])
+@login_required
+@admin_required
+def admin_update_doctor(user_id):
+    doc = User.query.get_or_404(user_id)
+    doc.name          = request.form.get('name', doc.name).strip()
+    doc.specialty     = request.form.get('specialty', doc.specialty or '').strip()
+    doc.profile_image = request.form.get('profile_image', doc.profile_image or '').strip() or doc.profile_image
+    try:
+        doc.fees = int(request.form.get('fees', doc.fees or 500))
+    except ValueError:
+        pass
+    db.session.commit()
+    flash(f'{doc.name} updated.', 'success')
     return redirect(url_for('admin_panel'))
 
 # ── Init ──────────────────────────────────────────────────────────────────────
@@ -775,6 +807,7 @@ with app.app_context():
     # Add missing columns if they don't exist (safe migration)
     try:
         db.session.execute(db.text('ALTER TABLE prescription ADD COLUMN IF NOT EXISTS prescription_file VARCHAR(300)'))
+        db.session.execute(db.text('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS fees INTEGER DEFAULT 500'))
         db.session.commit()
     except Exception:
         db.session.rollback()

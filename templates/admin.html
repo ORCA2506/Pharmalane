@@ -89,7 +89,7 @@
     <h6 style="font-weight:600;margin-bottom:0.6rem;color:#58a6ff;"><i class="fa fa-user-md me-1"></i>Doctors</h6>
     <div class="table-wrap mb-3">
       <table>
-        <thead><tr><th>Photo</th><th>Name</th><th>Email</th><th>Specialty</th><th>Action</th></tr></thead>
+        <thead><tr><th>Photo</th><th>Name</th><th>Email</th><th>Specialty</th><th>Fees</th><th>Actions</th></tr></thead>
         <tbody>
           {% for doc in doctors %}
           <tr>
@@ -101,7 +101,11 @@
             <td>{{ doc.name }}</td>
             <td style="color:var(--text-muted);">{{ doc.email }}</td>
             <td>{{ doc.specialty or '—' }}</td>
-            <td>
+            <td style="color:var(--primary);">₹{{ doc.fees or 500 }}</td>
+            <td style="white-space:nowrap;">
+              <button class="btn-sm-purple" onclick="openDocEditModal({{ doc.id }},'{{ doc.name }}','{{ doc.specialty or '' }}','{{ doc.profile_image or '' }}',{{ doc.fees or 500 }})">
+                <i class="fa fa-edit"></i> Edit
+              </button>
               <form method="POST" action="{{ url_for('admin_delete_user', user_id=doc.id) }}" style="display:inline;" onsubmit="return confirm('Delete {{ doc.name }}?')">
                 <button type="submit" class="btn-sm-danger"><i class="fa fa-trash"></i></button>
               </form>
@@ -158,6 +162,9 @@
               <button class="btn-sm-purple" onclick="openApptModal({{ appt.id }}, '{{ appt.status }}', '{{ appt.meet_link or '' }}')">
                 <i class="fa fa-edit"></i> Edit
               </button>
+              <form method="POST" action="{{ url_for('admin_delete_appt', appt_id=appt.id) }}" style="display:inline;" onsubmit="return confirm('Delete this appointment?')">
+                <button type="submit" class="btn-sm-danger"><i class="fa fa-trash"></i></button>
+              </form>
             </td>
           </tr>
           {% endfor %}
@@ -191,6 +198,33 @@
     </form>
   </div>
 </div>
+
+<!-- Edit Doctor Modal -->
+<div id="docEditModal" class="modal-overlay" onclick="if(event.target===this)closeDocEditModal()">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeDocEditModal()">&times;</button>
+    <h6 style="font-weight:700;margin-bottom:1.2rem;color:#58a6ff;"><i class="fa fa-user-md me-2"></i>Edit Doctor</h6>
+    <form method="POST" id="docEditForm">
+      <div class="mb-2">
+        <label style="font-size:0.83rem;color:#c9d1d9;display:block;margin-bottom:0.3rem;">Full Name</label>
+        <input type="text" name="name" id="editDocName" class="form-control" required>
+      </div>
+      <div class="mb-2">
+        <label style="font-size:0.83rem;color:#c9d1d9;display:block;margin-bottom:0.3rem;">Specialty</label>
+        <input type="text" name="specialty" id="editDocSpecialty" class="form-control">
+      </div>
+      <div class="mb-2">
+        <label style="font-size:0.83rem;color:#c9d1d9;display:block;margin-bottom:0.3rem;">Consultation Fees (₹)</label>
+        <input type="number" name="fees" id="editDocFees" class="form-control" min="0">
+      </div>
+      <div class="mb-3">
+        <label style="font-size:0.83rem;color:#c9d1d9;display:block;margin-bottom:0.3rem;">Photo URL</label>
+        <input type="text" name="profile_image" id="editDocPhoto" class="form-control" placeholder="https://...">
+      </div>
+      <button type="submit" class="btn-sm-primary" style="width:100%;padding:0.6rem;font-size:0.9rem;"><i class="fa fa-save me-1"></i>Save Doctor</button>
+    </form>
+  </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
@@ -206,5 +240,14 @@ function openApptModal(id, status, meetLink) {
   document.getElementById('apptModal').classList.add('active');
 }
 function closeApptModal() { document.getElementById('apptModal').classList.remove('active'); }
+function openDocEditModal(id, name, specialty, photo, fees) {
+  document.getElementById('docEditForm').action = '/admin/update-doctor/' + id;
+  document.getElementById('editDocName').value = name;
+  document.getElementById('editDocSpecialty').value = specialty;
+  document.getElementById('editDocFees').value = fees;
+  document.getElementById('editDocPhoto').value = photo;
+  document.getElementById('docEditModal').classList.add('active');
+}
+function closeDocEditModal() { document.getElementById('docEditModal').classList.remove('active'); }
 </script>
 {% endblock %}
